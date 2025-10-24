@@ -1,0 +1,215 @@
+# EV SCMMS AI Project - .gitignore
+# =======================================
+
+# Python
+# -------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+# -------------------
+.env/
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# IDE & Editors
+# --------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Flask
+# -----
+instance/
+.webassets-cache
+.flask_session
+
+# Environment Variables & Config
+# ------------------------------
+.env
+*.env
+config.env
+.env.local
+.env.development
+.env.test
+.env.production
+secrets.json
+credentials.json
+
+# Database
+# --------
+*.db
+*.sqlite
+*.sqlite3
+database.db
+*.sql.backup
+
+# Logs
+# ----
+*.log
+logs/
+*.log.*
+log/
+debug.log
+error.log
+access.log
+server.log
+chatbot.log
+forecast.log
+
+# AI & ML Models
+# --------------
+models/
+*.pkl
+*.joblib
+*.h5
+*.hdf5
+*.pb
+checkpoints/
+saved_models/
+weights/
+
+# Google AI & API Keys
+# --------------------
+*api_key*
+*service_account*
+*credentials*
+google_api_key.json
+gemini_api_key.txt
+.google/
+google-credentials.json
+
+# MCP & WebSocket
+# ---------------
+mcp_logs/
+websocket_logs/
+*.mcp.log
+session_data/
+conversation_history/
+
+# Temporary Files
+# ---------------
+tmp/
+temp/
+*.tmp
+*.temp
+.cache/
+cache/
+*.cache
+
+# Testing
+# -------
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Jupyter Notebook
+# ----------------
+.ipynb_checkpoints
+
+# Docker
+# ------
+Dockerfile.dev
+docker-compose.dev.yml
+.dockerignore
+
+# OS Generated
+# ------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project Specific
+# ----------------
+# Backup files
+*.backup
+*.bak
+forecast_engine.py.backup
+
+# Data files (if any)
+data/
+*.csv
+*.json.backup
+raw_data/
+processed_data/
+
+# Deployment
+# ----------
+.vercel
+.netlify
+.railway
+
+# Local development
+# -----------------
+local_config.py
+local_settings.py
+debug_config.py
+test_config.py
+
+# Socket.IO
+# ---------
+node_modules/
+package-lock.json
+yarn.lock
+
+# AI Training Data
+# ----------------
+training_data/
+datasets/
+embeddings/
+vector_store/
+
+# Performance & Monitoring
+# ------------------------
+.profiling/
+performance_logs/
+metrics/
+monitoring/
+
+# Certificates & Keys
+# -------------------
+*.pem
+*.key
+*.crt
+*.cert
+ssl/
+certificates/

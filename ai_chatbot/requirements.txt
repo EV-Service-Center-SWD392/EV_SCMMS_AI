@@ -1,0 +1,12 @@
+# EV SCMMS AI Chatbot Dependencies - Integrated Service
+flask==3.0.0
+flask-socketio==5.3.6
+psycopg2-binary==2.9.7
+flask-cors==6.0.1
+python-dotenv==1.0.0
+# Gemini AI and MCP integration
+google-generativeai==0.8.3
+mcp==1.19.0
+# Additional for chatbot
+python-socketio==5.11.0
+eventlet==0.33.3
