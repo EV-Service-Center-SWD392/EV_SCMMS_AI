@@ -84,7 +84,10 @@ class GeminiMCPChatbot:
             ),
             genai.protos.FunctionDeclaration(
                 name="get_inventory",
-                description="Xem tình trạng tồn kho hiện tại của các trung tâm bảo dưỡng",
+                description=(
+                    "Xem tình trạng tồn kho hiện tại của các trung tâm bảo dưỡng. "
+                    "Dùng khi người dùng muốn biết số lượng phụ tùng có sẵn."
+                ),
                 parameters=genai.protos.Schema(
                     type=genai.protos.Type.OBJECT,
                     properties={
@@ -97,7 +100,10 @@ class GeminiMCPChatbot:
             ),
             genai.protos.FunctionDeclaration(
                 name="get_usage_history",
-                description="Xem lịch sử sử dụng phụ tùng để phân tích xu hướng và dự báo",
+                description=(
+                    "Lấy lịch sử sử dụng phụ tùng để phân tích xu hướng và dự báo nhu cầu. "
+                    "Có thể lọc theo phụ tùng và trung tâm, trong khoảng 1-24 tháng."
+                ),
                 parameters=genai.protos.Schema(
                     type=genai.protos.Type.OBJECT,
                     properties={
@@ -118,7 +124,10 @@ class GeminiMCPChatbot:
             ),
             genai.protos.FunctionDeclaration(
                 name="forecast_demand",
-                description="Dự báo nhu cầu phụ tùng cho các tháng tới bằng AI",
+                description=(
+                    "Dự báo nhu cầu phụ tùng trong tương lai (1-12 tháng) bằng AI. "
+                    "Có thể dự báo cho từng phụ tùng và từng trung tâm."
+                ),
                 parameters=genai.protos.Schema(
                     type=genai.protos.Type.OBJECT,
                     properties={
