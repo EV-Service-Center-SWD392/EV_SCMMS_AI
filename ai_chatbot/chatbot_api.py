@@ -17,6 +17,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
 from ai_chatbot.mcp_interface import GeminiMCPChatbot
 
 
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'ev_scmms_chatbot_secret'
 socketio = SocketIO(app, cors_allowed_origins="*")
