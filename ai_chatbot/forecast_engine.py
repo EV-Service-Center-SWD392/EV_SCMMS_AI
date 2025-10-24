@@ -418,7 +418,7 @@ class ForecastEngine:
             }
 
 # Async wrapper functions for integration
-async def run_forecast_async(spare_part_id: str = None, center_id: str = None, forecast_months: int = 6):
+async def forecast_demand(spare_part_id: str = None, center_id: str = None, forecast_months: int = 6):
     """Async wrapper for forecast generation."""
     try:
         engine = ForecastEngine()
@@ -444,12 +444,6 @@ async def run_forecast_async(spare_part_id: str = None, center_id: str = None, f
             "error": f"Forecast wrapper error: {str(e)}"
         }
 
-async def run_forecast_sync(spare_part_id: str = None, center_id: str = None, forecast_months: int = 6):
-    """Synchronous wrapper for forecast generation."""
-    return asyncio.run(run_forecast_async(spare_part_id, center_id, forecast_months))
-
-if __name__ == "__main__":
-    # Test the forecast engine
-    result = run_forecast_sync(forecast_months=3)
-    print("🎯 Test Result:")
-    print(json.dumps(result, indent=2, default=str))
+async def run_forecast_async(spare_part_id: str = None, center_id: str = None, forecast_months: int = 6):
+    result = await forecast_demand(spare_part_id, center_id, forecast_months)
+    return result
