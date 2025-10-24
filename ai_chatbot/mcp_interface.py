@@ -62,7 +62,12 @@ class GeminiMCPChatbot:
         self.function_declarations = [
             genai.protos.FunctionDeclaration(
                 name="get_spare_parts",
-                description="Tìm kiếm thông tin phụ tùng xe điện bao gồm tên, giá, tồn kho, loại phụ tùng",
+                description=(
+                    "Truy vấn thông tin chi tiết về phụ tùng xe điện trong cơ sở dữ liệu. "
+                    "Có thể tìm theo ID hoặc tên phụ tùng. "
+                    "Kết quả bao gồm: tên, loại phụ tùng, giá hiện tại, số lượng tồn kho, và các thông tin liên quan khác. "
+                    "Sử dụng hàm này khi người dùng hỏi về thông tin, tình trạng, hoặc giá của phụ tùng."
+                ),
                 parameters=genai.protos.Schema(
                     type=genai.protos.Type.OBJECT,
                     properties={
