@@ -444,7 +444,7 @@ async def run_forecast_async(spare_part_id: str = None, center_id: str = None, f
             "error": f"Forecast wrapper error: {str(e)}"
         }
 
-def run_forecast_sync(spare_part_id: str = None, center_id: str = None, forecast_months: int = 6):
+async def run_forecast_sync(spare_part_id: str = None, center_id: str = None, forecast_months: int = 6):
     """Synchronous wrapper for forecast generation."""
     return asyncio.run(run_forecast_async(spare_part_id, center_id, forecast_months))
 

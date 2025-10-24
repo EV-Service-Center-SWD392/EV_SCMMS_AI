@@ -337,7 +337,7 @@ class GeminiMCPChatbot:
                 # Use integrated forecast engine
                 from ai_chatbot.forecast_engine import run_forecast_sync
                 
-                forecast_result = run_forecast_sync(
+                forecast_result = await run_forecast_sync(
                     spare_part_id=spare_part_id,
                     center_id=center_id, 
                     forecast_months=max(1, min(12, months))
