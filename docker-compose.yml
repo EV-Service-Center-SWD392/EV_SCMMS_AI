@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  ev-scmms-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ev-scmms-ai-chatbot
+    ports:
+      - "8469:8469"
+    environment:
+      - FLASK_ENV=production
+      - PYTHONPATH=/app
+      # Add your environment variables here
+      # - DATABASE_URL=your_postgres_url
+      # - GEMINI_API_KEY=your_gemini_key
+      # - SUPABASE_URL=your_supabase_url
+      # - SUPABASE_KEY=your_supabase_key
+    volumes:
+      # Mount logs directory for persistent logging
+      - ./logs:/app/logs
+      # Mount config if needed (but be careful with secrets)
+      # - ./shared/config.env:/app/shared/config.env:ro
+    networks:
+      - ev-scmms-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8469/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  # Optional: PostgreSQL for local development
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: ev-scmms-postgres
+  #   environment:
+  #     POSTGRES_DB: ev_scmms_db
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: password
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - ev-scmms-network
+
+networks:
+  ev-scmms-network:
+    driver: bridge
+
+# volumes:
+#   postgres_data:
