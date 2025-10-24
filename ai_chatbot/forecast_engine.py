@@ -427,7 +427,7 @@ async def forecast_demand(spare_part_id: str = None, center_id: str = None, fore
         forecast_result = await engine.generate_forecast(
             spare_part_id=spare_part_id,
             center_id=center_id, 
-            forecast_months=forecast_months
+            forecast_months=int(forecast_months)
         )
         
         # Save to database if successful
