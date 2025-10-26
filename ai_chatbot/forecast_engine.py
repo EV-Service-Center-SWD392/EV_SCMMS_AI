@@ -430,11 +430,6 @@ async def forecast_demand(spare_part_id: str = None, center_id: str = None, fore
             forecast_months=int(forecast_months)
         )
         
-        # Save to database if successful
-        if forecast_result.get("success"):
-            save_result = await engine.save_forecast_to_database(forecast_result)
-            forecast_result["database_save"] = save_result
-        
         return forecast_result
         
     except Exception as e:
