@@ -181,6 +181,13 @@ class ForecastEngine:
                         "recommendations": ["khuyến nghị dựa trên dữ liệu thực tế"]
                     }}
                 }}
+                
+                LƯU Ý: Bắt buộc phải có các field sau cho mỗi spare_part_forecast:
+                - current_stock: số tồn kho hiện tại
+                - minimum_stock_level: mức tồn kho tối thiểu  
+                - total_forecast_demand: tổng nhu cầu dự báo
+                - suggested_order_quantity: số lượng đề xuất đặt hàng
+                - monthly_forecasts: dự báo theo tháng
                 """
                 
                 response = self.model.generate_content(simple_prompt)
@@ -256,15 +263,34 @@ class ForecastEngine:
                     
                     total_demand = base_demand * forecast_months
                     
+                    # Find matching inventory for current stock
+                    current_stock = 0
+                    min_stock = 10
+                    for inv in inventory:
+                        if inv.get("sparepartid") == part_id or inv.get("SparePartID") == part_id:
+                            current_stock = inv.get("quantity") or inv.get("Quantity", 0)
+                            min_stock = inv.get("minimumstocklevel") or inv.get("MinimumStockLevel", 10)
+                            break
+                    
+                    # Calculate suggested order quantity
+                    suggested_qty = max(0, total_demand + min_stock - current_stock)
+                    
                     forecasts.append({
                         "spare_part_id": part_id,
                         "part_name": part_name,
                         "manufacture": manufacture,
                         "unit_price": unit_price,
+                        "current_stock": current_stock,
+                        "minimum_stock_level": min_stock,
                         "total_forecast_demand": total_demand,
-                        "replenishment_needed": True,
-                        "estimated_cost": total_demand * unit_price,
+                        "suggested_order_quantity": suggested_qty,
+                        "replenishment_needed": current_stock < (total_demand + min_stock),
+                        "estimated_cost": suggested_qty * unit_price,
                         "urgency_level": urgency,
+                        "monthly_forecasts": [
+                            {"month": i+1, "predicted_demand": max(1, total_demand // forecast_months), "confidence": 0.75}
+                            for i in range(forecast_months)
+                        ],
                         "reasoning": f"Dựa trên giá trị {unit_price:,.0f} VND và nhà sản xuất {manufacture}"
                     })
                 
@@ -405,18 +431,19 @@ class ForecastEngine:
                     "analysis_date": "{datetime.now().strftime('%Y-%m-%d')}",
                     "spare_parts_forecasts": [
                         {{
-                            "spare_part_id": "ID từ dữ liệu thực",
-                            "part_name": "Tên từ dữ liệu thực",
-                            "current_stock": "số lượng tồn kho hiện tại",
-                            "minimum_stock_level": "mức tồn kho tối thiểu",
-                            "total_forecast_demand": "dự báo nhu cầu tổng",
+                            "spare_part_id": "SparePartID từ dữ liệu",
+                            "part_name": "Name từ dữ liệu",
+                            "current_stock": "số tồn kho hiện tại (từ Inventory)",
+                            "minimum_stock_level": "MinimumStockLevel từ Inventory",
+                            "total_forecast_demand": "tổng nhu cầu dự báo {forecast_months} tháng",
+                            "suggested_order_quantity": "= total_forecast_demand + minimum_stock_level - current_stock (nếu > 0)",
                             "monthly_forecasts": [
-                                {{"month": 1, "predicted_demand": "số dự báo", "confidence": "độ tin cậy 0-1"}}
+                                {{"month": 1, "predicted_demand": "nhu cầu tháng 1", "confidence": 0.8}},
+                                {{"month": 2, "predicted_demand": "nhu cầu tháng 2", "confidence": 0.75}}
                             ],
-                            "replenishment_needed": "true/false",
-                            "suggested_order_quantity": "số lượng đề xuất đặt hàng",
-                            "estimated_cost": "chi phí dự kiến",
-                            "urgency_level": "high/medium/low"
+                            "replenishment_needed": "true nếu current_stock < total_forecast_demand + minimum_stock_level",
+                            "estimated_cost": "suggested_order_quantity * UnitPrice",
+                            "urgency_level": "high nếu UnitPrice cao hoặc current_stock rất thấp"
                         }}
                     ],
                     "summary": {{
