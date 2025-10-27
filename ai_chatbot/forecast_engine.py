@@ -148,12 +148,22 @@ class ForecastEngine:
             
             # Use AI for simplified analysis
             try:
-                simple_prompt = f"""
-                Phân tích thông minh TOÀN BỘ dữ liệu phụ tùng xe điện và dự báo {forecast_months} tháng dựa trên lịch sử:
+                # Convert Decimal to avoid serialization error
+                def safe_convert(data):
+                    if isinstance(data, list):
+                        return [{k: float(v) if hasattr(v, '__float__') else str(v) for k, v in item.items()} for item in data[:3]]
+                    return []
                 
-                PHỤTÙNG ({len(spare_parts)} items): {json.dumps(spare_parts, ensure_ascii=False)}
-                TỒNKHO ({len(inventory)} records): {json.dumps(inventory, ensure_ascii=False)}
-                LỊCHSỬ ({len(usage_history)} records): {json.dumps(usage_history, ensure_ascii=False)}
+                safe_parts = safe_convert(spare_parts)
+                safe_inventory = safe_convert(inventory)
+                safe_usage = safe_convert(usage_history)
+                
+                simple_prompt = f"""
+                Phân tích dữ liệu phụ tùng xe điện và CHỈ TRẢ VỀ phụ tùng cần bổ sung:
+                
+                PHỤTÙNG: {safe_parts}
+                TỒNKHO: {safe_inventory}
+                LỊCHSỬ: {safe_usage}
                 
                 Dựa trên dữ liệu thực tế, phân tích xu hướng sử dụng và đưa ra dự báo thông minh. Trả về JSON:
                 {{
@@ -217,12 +227,17 @@ class ForecastEngine:
             
             # AI-powered forecast from ALL available data
             try:
-                fallback_prompt = f"""
-                Phân tích dữ liệu phụ tùng xe điện và tạo dự báo {forecast_months} tháng thông minh:
+                # Safe data conversion
+                safe_parts_fb = [{k: float(v) if hasattr(v, '__float__') else str(v) for k, v in item.items()} for item in spare_parts[:3]]
+                safe_inventory_fb = [{k: float(v) if hasattr(v, '__float__') else str(v) for k, v in item.items()} for item in inventory[:3]]
+                safe_usage_fb = [{k: float(v) if hasattr(v, '__float__') else str(v) for k, v in item.items()} for item in usage_history[:3]]
                 
-                PHỤTÙNG: {json.dumps(spare_parts[:5], ensure_ascii=False)}
-                TỒNKHO: {json.dumps(inventory[:5], ensure_ascii=False)}
-                LỊCHSỬ: {json.dumps(usage_history[:5], ensure_ascii=False)}
+                fallback_prompt = f"""
+                Phân tích dữ liệu phụ tùng xe điện và CHỈ TRẢ VỀ phụ tùng cần bổ sung:
+                
+                PHỤTÙNG: {safe_parts_fb}
+                TỒNKHO: {safe_inventory_fb}
+                LỊCHSỬ: {safe_usage_fb}
                 
                 Trả về JSON chính xác:
                 {{
@@ -264,36 +279,35 @@ class ForecastEngine:
                 print(f"  ⚠️ AI fallback failed: {ai_err}, using enhanced data-driven approach")
                 
                 # Enhanced data-driven forecast with inventory matching
-                forecasts = []
+                all_forecasts = []
                 for part in spare_parts:
-                    part_id = part.get("sparepartid") or part.get("SparePartID")
-                    part_name = part.get("name") or part.get("Name")
-                    unit_price = part.get("unitprice") or part.get("UnitPrice") or 0
-                    manufacture = part.get("manufacture") or part.get("Manufacture", "Unknown")
+                    part_id = str(part.get("sparepartid") or part.get("SparePartID"))
+                    part_name = str(part.get("name") or part.get("Name"))
+                    unit_price = float(part.get("unitprice") or part.get("UnitPrice") or 0)
+                    manufacture = str(part.get("manufacture") or part.get("Manufacture") or "Unknown")
                     
                     # Find matching inventory for current stock
                     current_stock = 0
                     min_stock = 10
                     for inv in inventory:
-                        inv_spare_id = inv.get("sparepartid") or inv.get("SparePartID")
+                        inv_spare_id = str(inv.get("sparepartid") or inv.get("SparePartID") or "")
                         if inv_spare_id == part_id:
-                            current_stock = inv.get("quantity") or inv.get("Quantity", 0)
-                            min_stock = inv.get("minimumstocklevel") or inv.get("MinimumStockLevel", 10)
+                            current_stock = int(inv.get("quantity") or inv.get("Quantity") or 0)
+                            min_stock = int(inv.get("minimumstocklevel") or inv.get("MinimumStockLevel") or 10)
                             break
                     
                     # Smart demand calculation based on usage history + price
                     historical_usage = 0
                     for usage in usage_history:
-                        if usage.get("sparepartid") == part_id or usage.get("SparePartID") == part_id:
-                            historical_usage += usage.get("quantityused") or usage.get("QuantityUsed", 0)
+                        usage_part_id = str(usage.get("sparepartid") or usage.get("SparePartID") or "")
+                        if usage_part_id == part_id:
+                            historical_usage += int(usage.get("quantityused") or usage.get("QuantityUsed") or 0)
                     
                     if historical_usage > 0:
-                        # Use historical data
-                        monthly_avg = historical_usage / 24  # 24 months of data
-                        total_demand = int(monthly_avg * forecast_months * 1.2)  # 20% buffer
+                        monthly_avg = historical_usage / 24
+                        total_demand = int(monthly_avg * forecast_months * 1.2)
                         urgency = "high" if monthly_avg > 5 else "medium"
                     else:
-                        # Fallback to price-based logic
                         if unit_price > 1000000:
                             base_demand = 2
                             urgency = "high"
@@ -306,8 +320,9 @@ class ForecastEngine:
                         total_demand = base_demand * forecast_months
                     
                     suggested_qty = max(0, total_demand + min_stock - current_stock)
+                    replenishment_needed = current_stock < (total_demand + min_stock)
                     
-                    forecasts.append({
+                    forecast_item = {
                         "spare_part_id": part_id,
                         "part_name": part_name,
                         "manufacture": manufacture,
@@ -316,7 +331,7 @@ class ForecastEngine:
                         "minimum_stock_level": min_stock,
                         "total_forecast_demand": total_demand,
                         "suggested_order_quantity": suggested_qty,
-                        "replenishment_needed": current_stock < (total_demand + min_stock),
+                        "replenishment_needed": replenishment_needed,
                         "estimated_cost": suggested_qty * unit_price,
                         "urgency_level": urgency,
                         "monthly_forecasts": [
@@ -324,13 +339,18 @@ class ForecastEngine:
                             for i in range(forecast_months)
                         ],
                         "reasoning": f"Lịch sử: {historical_usage} đơn vị, Giá: {unit_price:,.0f} VND" if historical_usage > 0 else f"Dựa trên giá trị {unit_price:,.0f} VND"
-                    })
+                    }
+                    
+                    all_forecasts.append(forecast_item)
+                
+                # Filter: Only return parts that need replenishment or are close to needing it
+                forecasts = [f for f in all_forecasts if f["replenishment_needed"] or f["current_stock"] <= f["minimum_stock_level"] * 1.5]
                 
                 alternatives = ["Xem xét phụ tùng tương đương giá rẻ hơn", "Kết hợp đặt hàng để giảm chi phí"]
                 
-                print(f"  📊 Generated {len(forecasts)} forecasts with inventory data")
+                print(f"  📊 Filtered to {len(forecasts)} parts needing attention (from {len(all_forecasts)} total)")
             
-            total_cost = sum(f["estimated_cost"] for f in forecasts)
+            total_cost = sum(f.get("estimated_cost", 0) for f in forecasts)
             
             # AI recommendations based on comprehensive analysis
             try:
@@ -353,7 +373,7 @@ class ForecastEngine:
                 "forecast_period_months": forecast_months,
                 "analysis_date": datetime.now().strftime('%Y-%m-%d'),
                 "data_coverage": {"parts": len(spare_parts), "inventory": len(inventory), "usage_records": len(usage_history)},
-                "spare_parts_forecasts": forecasts,
+                "spare_parts_forecasts": forecasts if forecasts else [],
                 "summary": {
                     "total_parts_analyzed": len(forecasts),
                     "parts_needing_replenishment": len([f for f in forecasts if f.get('replenishment_needed')]),
@@ -440,18 +460,27 @@ class ForecastEngine:
                 inventory_data = data_results['inventory'].get('inventory', [])
                 usage_data = data_results['usage_history'].get('usage_history', [])
                 
+                # Convert Decimal to float for JSON serialization
+                def convert_decimals(obj):
+                    if isinstance(obj, list):
+                        return [convert_decimals(item) for item in obj]
+                    elif isinstance(obj, dict):
+                        return {k: convert_decimals(v) for k, v in obj.items()}
+                    elif hasattr(obj, '__float__'):
+                        return float(obj)
+                    return obj
+                
+                clean_spare_parts = convert_decimals(spare_parts_data[:5])
+                clean_inventory = convert_decimals(inventory_data[:5])
+                clean_usage = convert_decimals(usage_data[:5])
+                
                 forecast_prompt = f"""
                 Bạn là chuyên gia AI dự báo phụ tùng thông minh cho trung tâm xe điện.
-                Phân tích TOÀN BỘ dữ liệu sau và dự báo {forecast_months} tháng dựa trên xu hướng sử dụng thực tế:
+                Phân tích dữ liệu sau và CHỈ TRẢ VỀ phụ tùng cần bổ sung hoặc sắp cần bổ sung:
                 
-                PHỤ TÙNG ({len(spare_parts_data)} items - phân tích tất cả):
-                {json.dumps(spare_parts_data, indent=2, ensure_ascii=False) if spare_parts_data else 'Không có'}
-                
-                TỒN KHO ({len(inventory_data)} records - phân tích tất cả):
-                {json.dumps(inventory_data, indent=2, ensure_ascii=False) if inventory_data else 'Không có'}
-                
-                LỊCH Sử SỬ DỤNG ({len(usage_data)} records - 24 tháng gần đây):
-                {json.dumps(usage_data, indent=2, ensure_ascii=False) if usage_data else 'Không có'}
+                PHỤ TÙNG: {json.dumps(clean_spare_parts, ensure_ascii=False)}
+                TỒN KHO: {json.dumps(clean_inventory, ensure_ascii=False)}
+                LỊCH Sử: {json.dumps(clean_usage, ensure_ascii=False)}
                 
                 YÊU CẦU PHÂN TÍCH THÔNG MINH:
                 1. Phân tích xu hướng sử dụng theo tháng/mùa từ lịch sử
