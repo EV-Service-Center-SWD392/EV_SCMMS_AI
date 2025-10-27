@@ -63,8 +63,8 @@ class GeminiMCPChatbot:
             genai.protos.FunctionDeclaration(
                 name="get_spare_parts",
                 description=(
-                    "Tìm kiếm phụ tùng xe điện bằng tên. "
-                    "Hỗ trợ tìm kiếm gần giống (fuzzy search). "
+                    "Tìm kiếm phụ tùng xe điện theo tên, nhà sản xuất, hoặc loại phụ tùng. "
+                    "Tự động tìm kiếm đa trường với độ chính xác cao. "
                     "Kết quả bao gồm: tên, loại phụ tùng, giá hiện tại, số lượng tồn kho, và các thông tin liên quan khác. "
                     "Sử dụng hàm này khi người dùng hỏi về thông tin, tình trạng, hoặc giá của phụ tùng."
                 ),
@@ -73,7 +73,7 @@ class GeminiMCPChatbot:
                     properties={
                         "part_name": genai.protos.Schema(
                             type=genai.protos.Type.STRING,
-                            description="Tên phụ tùng để tìm kiếm (tùy chọn)"
+                            description="Từ khóa tìm kiếm (tên, nhà sản xuất, hoặc loại phụ tùng)"
                         )
                     }
                 )
@@ -218,10 +218,12 @@ class GeminiMCPChatbot:
             params = []
             
             if part_name:
-                sql += " AND (s.name ILIKE %s OR SIMILARITY(s.name, %s) > 0.3)"
-                params.extend([f"%{part_name}%", part_name])
-                sql += " ORDER BY SIMILARITY(s.name, %s) DESC, s.name"
-                params.append(part_name)
+                # Multi-field search: name, manufacture, type
+                sql += " AND (s.name ILIKE %s OR s.manufacture ILIKE %s OR t.name ILIKE %s)"
+                search_term = f"%{part_name}%"
+                params.extend([search_term, search_term, search_term])
+                sql += " ORDER BY CASE WHEN s.name ILIKE %s THEN 1 WHEN s.manufacture ILIKE %s THEN 2 ELSE 3 END, s.name"
+                params.extend([search_term, search_term])
             else:
                 sql += " ORDER BY s.name"
             
