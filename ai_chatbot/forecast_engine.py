@@ -146,9 +146,9 @@ class ForecastEngine:
                         "total_estimated_cost": 0,
                         "message": f"Hiện tại không có dữ liệu phụ tùng trong hệ thống để thực hiện dự báo {forecast_months} tháng. Vui lòng kiểm tra lại dữ liệu trong database hoặc thêm phụ tùng mới.",
                         "recommendations": [
-                            "Kiểm tra kết nối database",
-                            "Thêm dữ liệu phụ tùng vào hệ thống", 
-                            "Cập nhật inventory và usage history"
+                            "Kiểm tra kết nối database và đồng bộ dữ liệu",
+                            "Nhập dữ liệu phụ tùng và lịch sử sử dụng", 
+                            "Thiết lập quy trình cập nhật tồn kho tự động"
                         ]
                     }
                 }
@@ -179,7 +179,8 @@ class ForecastEngine:
                         "total_parts_analyzed": 3,
                         "parts_needing_replenishment": 2,
                         "total_estimated_cost": 500000,
-                        "message": "Kết quả phân tích"
+                        "message": "Kết quả phân tích",
+                        "recommendations": ["khuyến nghị từ AI dựa trên phân tích"]
                     }}
                 }}
                 """
@@ -231,6 +232,22 @@ class ForecastEngine:
             
             total_cost = sum(f["estimated_cost"] for f in forecasts)
             
+            # Generate AI recommendations for fallback
+            try:
+                rec_prompt = f"Đưa ra 3 khuyến nghị cho quản lý {len(forecasts)} phụ tùng xe điện với chi phí {total_cost:,.0f} VND. Trả về JSON array: [\"khuyến nghị 1\", \"khuyến nghị 2\", \"khuyến nghị 3\"]"
+                rec_response = self.model.generate_content(rec_prompt)
+                recommendations = json.loads(rec_response.text.strip()) if rec_response.text else [
+                    "Theo dõi mức tồn kho thường xuyên",
+                    "Cập nhật dữ liệu sử dụng định kỳ", 
+                    "Đánh giá lại chu kỳ bổ sung"
+                ]
+            except:
+                recommendations = [
+                    "Theo dõi mức tồn kho thường xuyên",
+                    "Cập nhật dữ liệu sử dụng định kỳ", 
+                    "Đánh giá lại chu kỳ bổ sung"
+                ]
+            
             return {
                 "data_source": "basic_fallback",
                 "success": True,
@@ -242,11 +259,7 @@ class ForecastEngine:
                     "parts_needing_replenishment": len(forecasts),
                     "total_estimated_cost": total_cost,
                     "message": f"Đã tạo dự báo cơ bản cho {len(forecasts)} phụ tùng trong {forecast_months} tháng với tổng chi phí dự kiến {total_cost:,.0f} VND.",
-                    "recommendations": [
-                        "Cập nhật thêm dữ liệu lịch sử sử dụng để cải thiện độ chính xác",
-                        "Theo dõi xu hướng sử dụng thực tế",
-                        "Xem xét điều chỉnh mức tồn kho tối thiểu"
-                    ]
+                    "recommendations": recommendations
                 }
             }
             
