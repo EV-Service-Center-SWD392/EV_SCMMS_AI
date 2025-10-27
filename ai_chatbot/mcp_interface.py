@@ -141,6 +141,50 @@ class GeminiMCPChatbot:
                         )
                     }
                 )
+            ),
+            genai.protos.FunctionDeclaration(
+                name="create_sparepart",
+                description=(
+                    "Hỗ trợ tạo phụ tùng mới. Phân tích thông tin người dùng cung cấp và trả về "
+                    "danh sách các trường cần thiết để tạo phụ tùng. AI không tự động tạo vào database."
+                ),
+                parameters=genai.protos.Schema(
+                    type=genai.protos.Type.OBJECT,
+                    properties={
+                        "name": genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            description="Tên phụ tùng (tùy chọn)"
+                        ),
+                        "unitPrice": genai.protos.Schema(
+                            type=genai.protos.Type.NUMBER,
+                            description="Giá đơn vị (tùy chọn)"
+                        ),
+                        "manufacturer": genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            description="Nhà sản xuất (tùy chọn)"
+                        ),
+                        "typeName": genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            description="Loại phụ tùng (tùy chọn)"
+                        ),
+                        "vehicleModelId": genai.protos.Schema(
+                            type=genai.protos.Type.INTEGER,
+                            description="ID mẫu xe (tùy chọn)"
+                        ),
+                        "centerName": genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            description="Tên trung tâm (tùy chọn)"
+                        ),
+                        "description": genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            description="Mô tả phụ tùng (tùy chọn)"
+                        ),
+                        "partNumber": genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            description="Mã phụ tùng (tùy chọn)"
+                        )
+                    }
+                )
             )
         ]
         
@@ -364,6 +408,39 @@ class GeminiMCPChatbot:
                     "error": str(e),
                     "message": f"Dự báo cho {months} tháng tới - Lỗi hệ thống tích hợp"
                 }
+        
+        elif function_name == "create_sparepart":
+            # Phân tích thông tin đã có và còn thiếu
+            provided_fields = {}
+            missing_fields = []
+            
+            # Các trường bắt buộc theo request body mẫu
+            required_fields = {
+                "name": "Tên phụ tùng",
+                "unitPrice": "Giá đơn vị", 
+                "manufacturer": "Nhà sản xuất",
+                "typeName": "Loại phụ tùng",
+                "vehicleModelId": "ID mẫu xe",
+                "centerName": "Tên trung tâm",
+                "description": "Mô tả",
+                "partNumber": "Mã phụ tùng"
+            }
+            
+            # Kiểm tra thông tin đã cung cấp
+            for field, label in required_fields.items():
+                value = arguments.get(field)
+                if value and value not in [None, "None", ""]:
+                    provided_fields[field] = {"label": label, "value": value}
+                else:
+                    missing_fields.append({"field": field, "label": label})
+            
+            return {
+                "action": "create_sparepart_form",
+                "provided_fields": provided_fields,
+                "missing_fields": missing_fields,
+                "message": "Thông tin tạo phụ tùng mới",
+                "note": "AI sẽ không tự động tạo vào database. Frontend cần hiển thị form để người dùng nhập đầy đủ thông tin."
+            }
         
         else:
             return {"error": f"Unknown function: {function_name}"}
