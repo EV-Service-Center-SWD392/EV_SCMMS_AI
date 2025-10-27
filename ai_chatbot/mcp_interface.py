@@ -63,18 +63,14 @@ class GeminiMCPChatbot:
             genai.protos.FunctionDeclaration(
                 name="get_spare_parts",
                 description=(
-                    "Truy vấn thông tin chi tiết về phụ tùng xe điện trong cơ sở dữ liệu. "
-                    "Có thể tìm theo ID hoặc tên phụ tùng. "
+                    "Tìm kiếm phụ tùng xe điện bằng tên. "
+                    "Hỗ trợ tìm kiếm gần giống (fuzzy search). "
                     "Kết quả bao gồm: tên, loại phụ tùng, giá hiện tại, số lượng tồn kho, và các thông tin liên quan khác. "
                     "Sử dụng hàm này khi người dùng hỏi về thông tin, tình trạng, hoặc giá của phụ tùng."
                 ),
                 parameters=genai.protos.Schema(
                     type=genai.protos.Type.OBJECT,
                     properties={
-                        "spare_part_id": genai.protos.Schema(
-                            type=genai.protos.Type.STRING,
-                            description="ID cụ thể của phụ tùng (tùy chọn)"
-                        ),
                         "part_name": genai.protos.Schema(
                             type=genai.protos.Type.STRING,
                             description="Tên phụ tùng để tìm kiếm (tùy chọn)"
@@ -203,12 +199,9 @@ class GeminiMCPChatbot:
         from db_connection import fetch
         
         if function_name == "get_spare_parts":
-            spare_part_id = arguments.get("spare_part_id")
             part_name = arguments.get("part_name")
             
             # Filter out None values and "None" strings
-            if spare_part_id in [None, "None", ""]:
-                spare_part_id = None
             if part_name in [None, "None", ""]:
                 part_name = None
             
@@ -224,14 +217,15 @@ class GeminiMCPChatbot:
             """
             params = []
             
-            if spare_part_id:
-                sql += " AND s.sparepartid = %s"
-                params.append(spare_part_id)
             if part_name:
-                sql += " AND s.name ILIKE %s"
-                params.append(f"%{part_name}%")
+                sql += " AND (s.name ILIKE %s OR SIMILARITY(s.name, %s) > 0.3)"
+                params.extend([f"%{part_name}%", part_name])
+                sql += " ORDER BY SIMILARITY(s.name, %s) DESC, s.name"
+                params.append(part_name)
+            else:
+                sql += " ORDER BY s.name"
             
-            sql += " LIMIT 20"  # Get more real data from Supabase
+            sql += " LIMIT 20"
             rows = await fetch(sql, *params) if params else await fetch(sql)
             # Return comprehensive data from real Supabase database
             result_data = []
