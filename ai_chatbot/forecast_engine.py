@@ -218,50 +218,58 @@ class ForecastEngine:
             # AI-powered forecast from ALL available data
             try:
                 fallback_prompt = f"""
-                Dựa trên dữ liệu thực tế, hãy tạo dự báo thông minh cho {len(spare_parts)} phụ tùng:
+                Phân tích dữ liệu phụ tùng xe điện và tạo dự báo {forecast_months} tháng thông minh:
                 
-                Dữ liệu: PHỤTÙNG={len(spare_parts)}, TỒNKHO={len(inventory)}, LỊCHSỬ={len(usage_history)}
+                PHỤTÙNG: {json.dumps(spare_parts[:5], ensure_ascii=False)}
+                TỒNKHO: {json.dumps(inventory[:5], ensure_ascii=False)}
+                LỊCHSỬ: {json.dumps(usage_history[:5], ensure_ascii=False)}
                 
-                Trả về JSON dự báo {forecast_months} tháng cho tất cả phụ tùng dựa trên:
-                - Giá trị và độ quan trọng
-                - Xu hướng sử dụng (nếu có lịch sử)
-                - Mức tồn kho hiện tại
-                - Đề xuất tối ưu hóa
-                
-                Format: {{"forecasts": [{{"spare_part_id": "ID", "forecast_demand": số, "reasoning": "lý do"}}], "alternatives": ["gợi ý thay thế"]}}
+                Trả về JSON chính xác:
+                {{
+                    "spare_parts_forecasts": [
+                        {{
+                            "spare_part_id": "SparePartID từ dữ liệu",
+                            "part_name": "Name từ dữ liệu",
+                            "current_stock": "Quantity từ inventory",
+                            "minimum_stock_level": "MinimumStockLevel từ inventory",
+                            "total_forecast_demand": "dự báo thông minh",
+                            "suggested_order_quantity": "số lượng đề xuất",
+                            "replenishment_needed": true,
+                            "estimated_cost": "chi phí dự kiến",
+                            "urgency_level": "high/medium/low",
+                            "monthly_forecasts": [{{"month": 1, "predicted_demand": 5, "confidence": 0.8}}]
+                        }}
+                    ],
+                    "alternatives": ["gợi ý tối ưu"]
+                }}
                 """
                 
                 ai_response = self.model.generate_content(fallback_prompt)
                 if ai_response.text:
-                    ai_data = json.loads(ai_response.text.strip().replace('```json', '').replace('```', ''))
-                    forecasts = ai_data.get('forecasts', [])
+                    response_text = ai_response.text.strip()
+                    if response_text.startswith('```json'):
+                        response_text = response_text[7:]
+                    if response_text.endswith('```'):
+                        response_text = response_text[:-3]
+                    response_text = response_text.strip()
+                    
+                    ai_data = json.loads(response_text)
+                    forecasts = ai_data.get('spare_parts_forecasts', [])
                     alternatives = ai_data.get('alternatives', [])
+                    print(f"  ✅ AI generated {len(forecasts)} forecasts")
                 else:
                     raise Exception("No AI response")
                     
             except Exception as ai_err:
-                print(f"  ⚠️ AI fallback failed: {ai_err}, using data-driven approach")
+                print(f"  ⚠️ AI fallback failed: {ai_err}, using enhanced data-driven approach")
                 
-                # Data-driven forecast for ALL parts
+                # Enhanced data-driven forecast with inventory matching
                 forecasts = []
                 for part in spare_parts:
                     part_id = part.get("sparepartid") or part.get("SparePartID")
                     part_name = part.get("name") or part.get("Name")
                     unit_price = part.get("unitprice") or part.get("UnitPrice") or 0
                     manufacture = part.get("manufacture") or part.get("Manufacture", "Unknown")
-                    
-                    # Calculate demand based on price tier (expensive = less frequent but critical)
-                    if unit_price > 1000000:  # High-value parts
-                        base_demand = 2
-                        urgency = "high"
-                    elif unit_price > 500000:  # Medium-value parts  
-                        base_demand = 5
-                        urgency = "medium"
-                    else:  # Low-value parts
-                        base_demand = 10
-                        urgency = "low"
-                    
-                    total_demand = base_demand * forecast_months
                     
                     # Find matching inventory for current stock
                     current_stock = 0
@@ -271,12 +279,32 @@ class ForecastEngine:
                         if inv_spare_id == part_id:
                             current_stock = inv.get("quantity") or inv.get("Quantity", 0)
                             min_stock = inv.get("minimumstocklevel") or inv.get("MinimumStockLevel", 10)
-                            print(f"    ✅ Found inventory for {part_name}: stock={current_stock}, min={min_stock}")
                             break
-                    else:
-                        print(f"    ⚠️ No inventory found for {part_name} (ID: {part_id})")
                     
-                    # Calculate suggested order quantity
+                    # Smart demand calculation based on usage history + price
+                    historical_usage = 0
+                    for usage in usage_history:
+                        if usage.get("sparepartid") == part_id or usage.get("SparePartID") == part_id:
+                            historical_usage += usage.get("quantityused") or usage.get("QuantityUsed", 0)
+                    
+                    if historical_usage > 0:
+                        # Use historical data
+                        monthly_avg = historical_usage / 24  # 24 months of data
+                        total_demand = int(monthly_avg * forecast_months * 1.2)  # 20% buffer
+                        urgency = "high" if monthly_avg > 5 else "medium"
+                    else:
+                        # Fallback to price-based logic
+                        if unit_price > 1000000:
+                            base_demand = 2
+                            urgency = "high"
+                        elif unit_price > 500000:
+                            base_demand = 5
+                            urgency = "medium"
+                        else:
+                            base_demand = 8
+                            urgency = "low"
+                        total_demand = base_demand * forecast_months
+                    
                     suggested_qty = max(0, total_demand + min_stock - current_stock)
                     
                     forecasts.append({
@@ -292,10 +320,10 @@ class ForecastEngine:
                         "estimated_cost": suggested_qty * unit_price,
                         "urgency_level": urgency,
                         "monthly_forecasts": [
-                            {"month": i+1, "predicted_demand": max(1, total_demand // forecast_months), "confidence": 0.75}
+                            {"month": i+1, "predicted_demand": max(1, total_demand // forecast_months), "confidence": 0.8 if historical_usage > 0 else 0.6}
                             for i in range(forecast_months)
                         ],
-                        "reasoning": f"Dựa trên giá trị {unit_price:,.0f} VND và nhà sản xuất {manufacture}"
+                        "reasoning": f"Lịch sử: {historical_usage} đơn vị, Giá: {unit_price:,.0f} VND" if historical_usage > 0 else f"Dựa trên giá trị {unit_price:,.0f} VND"
                     })
                 
                 alternatives = ["Xem xét phụ tùng tương đương giá rẻ hơn", "Kết hợp đặt hàng để giảm chi phí"]
