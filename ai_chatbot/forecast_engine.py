@@ -267,10 +267,14 @@ class ForecastEngine:
                     current_stock = 0
                     min_stock = 10
                     for inv in inventory:
-                        if inv.get("sparepartid") == part_id or inv.get("SparePartID") == part_id:
+                        inv_spare_id = inv.get("sparepartid") or inv.get("SparePartID")
+                        if inv_spare_id == part_id:
                             current_stock = inv.get("quantity") or inv.get("Quantity", 0)
                             min_stock = inv.get("minimumstocklevel") or inv.get("MinimumStockLevel", 10)
+                            print(f"    ✅ Found inventory for {part_name}: stock={current_stock}, min={min_stock}")
                             break
+                    else:
+                        print(f"    ⚠️ No inventory found for {part_name} (ID: {part_id})")
                     
                     # Calculate suggested order quantity
                     suggested_qty = max(0, total_demand + min_stock - current_stock)
@@ -295,6 +299,8 @@ class ForecastEngine:
                     })
                 
                 alternatives = ["Xem xét phụ tùng tương đương giá rẻ hơn", "Kết hợp đặt hàng để giảm chi phí"]
+                
+                print(f"  📊 Generated {len(forecasts)} forecasts with inventory data")
             
             total_cost = sum(f["estimated_cost"] for f in forecasts)
             
@@ -360,16 +366,20 @@ class ForecastEngine:
             """)
             print(f"  ✅ Spare parts: {len(spare_parts)} items")
             
-            # Get ALL inventory (no limit)
-            print("  🔍 Fetching ALL inventory...")
+            # Get ALL inventory with SparePartID for matching
+            print("  🔍 Fetching ALL inventory with SparePartID...")
             inventory = await fetch("""
                 SELECT i.InventoryID, i.CenterID, i.Quantity, 
-                       i.MinimumStockLevel, i.IsActive
+                       i.MinimumStockLevel, i.IsActive,
+                       s.SparePartID, s.Name as PartName
                 FROM Inventory_TuHT i
-                WHERE i.IsActive = true
+                LEFT JOIN SparePart_TuHT s ON i.InventoryID = s.InventoryID
+                WHERE i.IsActive = true AND s.IsActive = true
                 ORDER BY i.Quantity ASC
             """)
             print(f"  ✅ Inventory: {len(inventory)} items")
+            if inventory:
+                print(f"  🔍 First inventory keys: {list(inventory[0].keys())}")
             
             # Get usage history for analysis
             print("  🔍 Fetching usage history...")
