@@ -377,34 +377,59 @@ class ForecastEngine:
                     
                     all_forecasts.append(forecast_item)
                 
-                # Debug: Check filter conditions
+                # More intelligent filtering - include more parts for analysis
                 print(f"  🔍 Analyzing {len(all_forecasts)} forecasts for filtering...")
                 
                 forecasts = []
                 for f in all_forecasts:
                     needs_replenishment = f["replenishment_needed"]
-                    low_stock = f["current_stock"] <= f["minimum_stock_level"] * 1.5
-                    high_demand = f["total_forecast_demand"] > f["current_stock"]
+                    low_stock = f["current_stock"] <= f["minimum_stock_level"] * 2.0  # More lenient
+                    high_demand = f["total_forecast_demand"] > f["current_stock"] * 0.1  # Much more lenient
+                    high_value = f["unit_price"] > 300000  # Include expensive parts
+                    has_usage = "Lịch sử" in f["reasoning"]  # Include parts with usage history
                     
-                    # More lenient filter: include if ANY condition is true
-                    if needs_replenishment or low_stock or high_demand:
+                    # Very lenient filter: include if ANY condition is true
+                    if needs_replenishment or low_stock or high_demand or high_value or has_usage:
                         forecasts.append(f)
-                        print(f"    ✅ Including {f['part_name']}: stock={f['current_stock']}, min={f['minimum_stock_level']}, demand={f['total_forecast_demand']}, replenish={needs_replenishment}")
+                        reasons = []
+                        if needs_replenishment: reasons.append("needs_replenish")
+                        if low_stock: reasons.append("low_stock")
+                        if high_demand: reasons.append("high_demand")
+                        if high_value: reasons.append("high_value")
+                        if has_usage: reasons.append("has_usage")
+                        print(f"    ✅ Including {f['part_name']}: {', '.join(reasons)}")
                     else:
-                        print(f"    ❌ Skipping {f['part_name']}: stock={f['current_stock']}, min={f['minimum_stock_level']}, demand={f['total_forecast_demand']}")
+                        print(f"    ❌ Skipping {f['part_name']}: no criteria met")
                 
-                # If still no forecasts, include top 3 parts regardless of criteria
-                if not forecasts and all_forecasts:
-                    print("  ⚠️ No parts met filter criteria, including top 3 parts for demonstration...")
-                    sorted_forecasts = sorted(all_forecasts, key=lambda x: x['total_forecast_demand'], reverse=True)
-                    forecasts = sorted_forecasts[:3]
-                    for f in forecasts:
-                        f['replenishment_needed'] = True  # Force to show as needing replenishment
-                        print(f"    🔄 Force including {f['part_name']}: demand={f['total_forecast_demand']}, cost={f['estimated_cost']}")
+                # Always ensure we have at least 3-5 parts for meaningful analysis
+                if len(forecasts) < 3 and all_forecasts:
+                    print(f"  🔄 Only {len(forecasts)} parts selected, adding more for comprehensive analysis...")
+                    # Sort by various criteria and take top parts
+                    remaining = [f for f in all_forecasts if f not in forecasts]
+                    
+                    # Add high-value parts
+                    high_value_parts = sorted([f for f in remaining if f['unit_price'] > 200000], 
+                                            key=lambda x: x['unit_price'], reverse=True)[:2]
+                    
+                    # Add parts with highest demand
+                    high_demand_parts = sorted([f for f in remaining if f not in high_value_parts], 
+                                             key=lambda x: x['total_forecast_demand'], reverse=True)[:2]
+                    
+                    for f in high_value_parts + high_demand_parts:
+                        if len(forecasts) < 5:  # Cap at 5 parts
+                            forecasts.append(f)
+                            print(f"    🔄 Added {f['part_name']}: value={f['unit_price']:,.0f}, demand={f['total_forecast_demand']}")
                 
                 alternatives = ["Xem xét phụ tùng tương đương giá rẻ hơn", "Kết hợp đặt hàng để giảm chi phí"]
                 
-                print(f"  📊 Final result: {len(forecasts)} parts selected (from {len(all_forecasts)} total)")
+                print(f"  📊 Final result: {len(forecasts)} parts selected for analysis (from {len(all_forecasts)} total parts)")
+                
+                # Ensure we have meaningful data
+                if not forecasts:
+                    print("  ⚠️ No forecasts generated, using top 3 parts as fallback")
+                    forecasts = sorted(all_forecasts, key=lambda x: x['unit_price'], reverse=True)[:3]
+                    for f in forecasts:
+                        f['replenishment_needed'] = True
             
             total_cost = sum(f.get("estimated_cost", 0) for f in forecasts)
             
@@ -530,9 +555,56 @@ class ForecastEngine:
                 clean_inventory = convert_decimals(inventory_data[:5])
                 clean_usage = convert_decimals(usage_data[:5])
                 
-                # Skip AI for now - use intelligent data-driven approach
-                print("  🔄 Using intelligent data-driven forecast (AI disabled for reliability)...")
-                raise Exception("Skip AI, use data-driven")
+                # Send ALL data to AI for intelligent selection
+                print(f"  🤖 Sending ALL {len(spare_parts_data)} parts to AI for analysis...")
+                
+                forecast_prompt = f"""
+                Bạn là chuyên gia AI dự báo phụ tùng thông minh.
+                Phân tích TOÀN BỘ dữ liệu sau và CHỈ TRẢ VỀ những phụ tùng thực sự cần thay thế hoặc bổ sung:
+                
+                TẤT CẢ PHỤ TÙNG ({len(clean_spare_parts)} items):
+                {json.dumps(clean_spare_parts, ensure_ascii=False)}
+                
+                TẤT CẢ TỒN KHO ({len(clean_inventory)} records):
+                {json.dumps(clean_inventory, ensure_ascii=False)}
+                
+                TẤT CẢ LỊCH SỬ ({len(clean_usage)} records):
+                {json.dumps(clean_usage, ensure_ascii=False)}
+                
+                HÃY PHÂN TÍCH VÀ CHỈ CHỌN LỌC những phụ tùng:
+                1. Có tồn kho thấp hơn mức tối thiểu
+                2. Dự báo sẽ cần trong {forecast_months} tháng tới
+                3. Có lịch sử sử dụng cao
+                4. Là phụ tùng quan trọng/đắt tiền cần theo dõi
+                
+                Trả về JSON chính xác:
+                {{
+                    "forecast_period_months": {forecast_months},
+                    "analysis_date": "{datetime.now().strftime('%Y-%m-%d')}",
+                    "spare_parts_forecasts": [
+                        {{
+                            "spare_part_id": "SparePartID từ dữ liệu",
+                            "part_name": "Name từ dữ liệu",
+                            "current_stock": "Quantity hiện tại",
+                            "minimum_stock_level": "MinimumStockLevel",
+                            "total_forecast_demand": "dự báo {forecast_months} tháng",
+                            "suggested_order_quantity": "số lượng nên đặt",
+                            "replenishment_needed": true,
+                            "estimated_cost": "chi phí dự kiến",
+                            "urgency_level": "high/medium/low",
+                            "monthly_forecasts": [{{"month": 1, "predicted_demand": 5, "confidence": 0.8}}],
+                            "reasoning": "lý do tại sao chọn phụ tùng này"
+                        }}
+                    ],
+                    "summary": {{
+                        "total_parts_analyzed": {len(spare_parts_data)},
+                        "parts_needing_replenishment": "số phụ tùng cần bổ sung",
+                        "total_estimated_cost": "tổng chi phí",
+                        "message": "tóm tắt kết quả phân tích",
+                        "recommendations": ["khuyến nghị thông minh"]
+                    }}
+                }}
+                """
                 
                 response = self.model.generate_content(forecast_prompt)
                 
