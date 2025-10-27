@@ -47,19 +47,17 @@ class ForecastEngine:
                 
                 if spare_part_id:
                     sql = """
-                    SELECT sparepartid, name, description, unitprice, category, 
-                           manufacturer, partnumber, isactive
-                    FROM sparepart_tuht 
-                    WHERE sparepartid = %s AND isactive = true
+                    SELECT SparePartID, Name, UnitPrice, Manufacture, IsActive
+                    FROM SparePart_TuHT 
+                    WHERE SparePartID = %s AND IsActive = true
                     """
                     rows = await fetch(sql, spare_part_id)
                 else:
                     sql = """
-                    SELECT sparepartid, name, description, unitprice, category, 
-                           manufacturer, partnumber, isactive
-                    FROM sparepart_tuht 
-                    WHERE isactive = true 
-                    ORDER BY name LIMIT 20
+                    SELECT SparePartID, Name, UnitPrice, Manufacture, IsActive
+                    FROM SparePart_TuHT 
+                    WHERE IsActive = true 
+                    ORDER BY Name LIMIT 20
                     """
                     rows = await fetch(sql)
                 
@@ -70,20 +68,17 @@ class ForecastEngine:
                 center_id = arguments.get("center_id")
                 
                 base_sql = """
-                SELECT i.inventoryid, i.sparepartid, i.centerid, i.quantity, 
-                       i.minimumstock, i.maximumstock, i.reorderlevel,
-                       s.name as spare_part_name, s.unitprice, c.name as center_name
-                FROM inventory_tuht i
-                LEFT JOIN sparepart_tuht s ON i.sparepartid = s.sparepartid  
-                LEFT JOIN centertuantm c ON i.centerid = c.centerid
-                WHERE i.isactive = true
+                SELECT i.InventoryID, i.CenterID, i.Quantity, 
+                       i.MinimumStockLevel, i.IsActive
+                FROM Inventory_TuHT i
+                WHERE i.IsActive = true
                 """
                 
                 if center_id:
-                    sql = base_sql + " AND i.centerid = %s ORDER BY i.quantity ASC LIMIT 50"
+                    sql = base_sql + " AND i.CenterID = %s ORDER BY i.Quantity ASC LIMIT 50"
                     rows = await fetch(sql, center_id)
                 else:
-                    sql = base_sql + " ORDER BY i.quantity ASC LIMIT 50"
+                    sql = base_sql + " ORDER BY i.Quantity ASC LIMIT 50"
                     rows = await fetch(sql)
                 
                 print(f"  📊 Retrieved {len(rows) if rows else 0} inventory records")
@@ -95,24 +90,22 @@ class ForecastEngine:
                 center_id = arguments.get("center_id")
                 
                 sql = """
-                SELECT h.usagehistoryid, h.sparepartid, h.centerid, h.quantityused,
-                       h.useddate, h.reason,
-                       s.name as spare_part_name, s.unitprice, c.name as center_name
-                FROM sparepartusagehistory_tuht h
-                LEFT JOIN sparepart_tuht s ON h.sparepartid = s.sparepartid
-                LEFT JOIN centertuantm c ON h.centerid = c.centerid
-                WHERE h.useddate >= (now() - (%s::int * interval '1 month')) AND h.isactive = true
+                SELECT h.UsageID, h.SparePartID, h.CenterID, h.QuantityUsed,
+                       h.UsedDate, s.Name as PartName, s.UnitPrice
+                FROM SparePartUsageHistory_TuHT h
+                LEFT JOIN SparePart_TuHT s ON h.SparePartID = s.SparePartID
+                WHERE h.UsedDate >= (CURRENT_DATE - (%s::int * interval '1 month')) AND h.IsActive = true
                 """
                 params = [months]
                 
                 if spare_part_id:
-                    sql += " AND h.sparepartid = %s"
+                    sql += " AND h.SparePartID = %s"
                     params.append(spare_part_id)
                 if center_id:
-                    sql += " AND h.centerid = %s"
+                    sql += " AND h.CenterID = %s"
                     params.append(center_id)
                     
-                sql += " ORDER BY h.useddate DESC LIMIT 100"
+                sql += " ORDER BY h.UsedDate DESC LIMIT 100"
                 rows = await fetch(sql, *params)
                 print(f"  📈 Retrieved {len(rows) if rows else 0} usage history records")
                 return {"usage_history": rows or [], "total_count": len(rows) if rows else 0, "months_covered": months}
@@ -162,30 +155,30 @@ class ForecastEngine:
                 TỒNKHO ({len(inventory)} records): {json.dumps(inventory, ensure_ascii=False)}
                 LỊCHSỬ ({len(usage_history)} records): {json.dumps(usage_history, ensure_ascii=False)}
                 
-                Hãy phân tích xu hướng sử dụng, đề xuất thay thế thông minh. Trả về JSON:
+                Dựa trên dữ liệu thực tế, phân tích xu hướng sử dụng và đưa ra dự báo thông minh. Trả về JSON:
                 {{
                     "forecast_period_months": {forecast_months},
                     "analysis_date": "{datetime.now().strftime('%Y-%m-%d')}",
                     "spare_parts_forecasts": [
                         {{
-                            "spare_part_id": "ID thực",
-                            "part_name": "Tên thực",
-                            "usage_pattern": "xu hướng sử dụng",
-                            "total_forecast_demand": "dự báo dựa trên pattern",
-                            "alternative_suggestions": ["phụ tùng thay thế"],
+                            "spare_part_id": "SparePartID từ dữ liệu",
+                            "part_name": "Name từ dữ liệu",
+                            "usage_pattern": "xu hướng dựa trên lịch sử",
+                            "total_forecast_demand": "số dự báo thông minh",
+                            "alternative_suggestions": ["phụ tùng thay thế tương tự"],
                             "replenishment_needed": "true/false",
-                            "estimated_cost": "chi phí thực tế",
+                            "estimated_cost": "UnitPrice * forecast_demand",
                             "urgency_level": "high/medium/low",
-                            "seasonal_factor": "ảnh hưởng mùa vụ"
+                            "seasonal_factor": "mùa vụ ảnh hưởng"
                         }}
                     ],
                     "summary": {{
-                        "total_parts_analyzed": "số thực tế",
-                        "high_usage_parts": "phụ tùng dùng nhiều",
-                        "cost_optimization_suggestions": ["gợi ý tối ưu chi phí"],
-                        "total_estimated_cost": "tổng chi phí",
-                        "message": "phân tích chi tiết",
-                        "recommendations": ["khuyến nghị thông minh"]
+                        "total_parts_analyzed": {len(spare_parts)},
+                        "high_usage_parts": "số phụ tùng dùng nhiều",
+                        "cost_optimization_suggestions": ["gợi ý tối ưu dựa trên Manufacture và UnitPrice"],
+                        "total_estimated_cost": "tổng chi phí dự kiến",
+                        "message": "kết quả phân tích chi tiết",
+                        "recommendations": ["khuyến nghị dựa trên dữ liệu thực tế"]
                     }}
                 }}
                 """
@@ -248,6 +241,7 @@ class ForecastEngine:
                     part_id = part.get("sparepartid") or part.get("SparePartID")
                     part_name = part.get("name") or part.get("Name")
                     unit_price = part.get("unitprice") or part.get("UnitPrice") or 0
+                    manufacture = part.get("manufacture") or part.get("Manufacture", "Unknown")
                     
                     # Calculate demand based on price tier (expensive = less frequent but critical)
                     if unit_price > 1000000:  # High-value parts
@@ -265,11 +259,13 @@ class ForecastEngine:
                     forecasts.append({
                         "spare_part_id": part_id,
                         "part_name": part_name,
+                        "manufacture": manufacture,
+                        "unit_price": unit_price,
                         "total_forecast_demand": total_demand,
                         "replenishment_needed": True,
                         "estimated_cost": total_demand * unit_price,
                         "urgency_level": urgency,
-                        "reasoning": f"Dựa trên giá trị {unit_price:,.0f} VND"
+                        "reasoning": f"Dựa trên giá trị {unit_price:,.0f} VND và nhà sản xuất {manufacture}"
                     })
                 
                 alternatives = ["Xem xét phụ tùng tương đương giá rẻ hơn", "Kết hợp đặt hàng để giảm chi phí"]
@@ -331,7 +327,7 @@ class ForecastEngine:
             # Get ALL spare parts (no limit)
             print("  🔍 Fetching ALL spare parts...")
             spare_parts = await fetch("""
-                SELECT SparePartID, Name, UnitPrice, Manufacture, Category, IsActive
+                SELECT SparePartID, Name, UnitPrice, Manufacture, IsActive
                 FROM SparePart_TuHT 
                 WHERE IsActive = true 
                 ORDER BY UnitPrice DESC
@@ -341,12 +337,10 @@ class ForecastEngine:
             # Get ALL inventory (no limit)
             print("  🔍 Fetching ALL inventory...")
             inventory = await fetch("""
-                SELECT i.InventoryID, i.SparePartID, i.CenterID, i.Quantity, 
-                       i.MinimumStockLevel, i.MaximumStockLevel, i.IsActive,
-                       s.Name as PartName, s.UnitPrice, s.Category
+                SELECT i.InventoryID, i.CenterID, i.Quantity, 
+                       i.MinimumStockLevel, i.IsActive
                 FROM Inventory_TuHT i
-                LEFT JOIN SparePart_TuHT s ON i.SparePartID = s.SparePartID
-                WHERE i.IsActive = true AND s.IsActive = true
+                WHERE i.IsActive = true
                 ORDER BY i.Quantity ASC
             """)
             print(f"  ✅ Inventory: {len(inventory)} items")
@@ -354,8 +348,8 @@ class ForecastEngine:
             # Get usage history for analysis
             print("  🔍 Fetching usage history...")
             usage_history = await fetch("""
-                SELECT h.SparePartID, h.CenterID, h.QuantityUsed, h.UsedDate, h.Reason,
-                       s.Name as PartName, s.UnitPrice, s.Category,
+                SELECT h.UsageID, h.SparePartID, h.CenterID, h.QuantityUsed, h.UsedDate,
+                       s.Name as PartName, s.UnitPrice, s.Manufacture,
                        EXTRACT(MONTH FROM h.UsedDate) as UsageMonth,
                        EXTRACT(YEAR FROM h.UsedDate) as UsageYear
                 FROM SparePartUsageHistory_TuHT h
@@ -495,18 +489,18 @@ class ForecastEngine:
                 
                 # Insert into database
                 insert_sql = """
-                INSERT INTO sparepartforecast_tuht (
-                    sparepartid, centerid, predictedusage, safetystock, reorderpoint, 
-                    forecastedby, forecastconfidence, forecastdate, status, isactive, createdat
+                INSERT INTO SparePartForecast_TuHT (
+                    SparePartID, CenterID, PredictedUsage, SafetyStock, ReorderPoint, 
+                    ForecastedBy, ForecastConfidence, ForecastDate, Status, IsActive, createdAt
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, now(), 'PENDING', true, now())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, 'PENDING', true, CURRENT_TIMESTAMP)
                 """
                 
                 # Get a valid CenterID from inventory or use default
                 center_id = None
                 try:
                     from db_connection import fetch
-                    centers = await fetch("SELECT centerid FROM CenterTuantm WHERE isactive = true LIMIT 1")
+                    centers = await fetch("SELECT CenterID FROM CenterTuantm WHERE IsActive = true LIMIT 1")
                     if centers:
                         center_id = centers[0].get("centerid") or centers[0].get("CenterID")
                 except:
