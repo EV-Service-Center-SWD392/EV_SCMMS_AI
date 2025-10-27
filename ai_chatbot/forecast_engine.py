@@ -1,14 +1,6 @@
 """
-Spare Parts Forecast Engine for EV SCMMS AI Chatbot - Fixed Version
-Integrate                if center_id:
-                        sql += " ORDER BY h.useddate DESC LIMIT 200"
-                rows = await fetch(sql, *params)
-                print(f"  📈 Retrieved {len(rows) if rows else 0} usage history records")
-                return {"usage_history": rows or [], "total_count": len(rows) if rows else 0, "months_covered": months}        sql = base_sql + " AND i.centerid = %s ORDER BY i.quantity ASC LIMIT 50"
-                    rows = await fetch(sql, center_id)
-                else:
-                    sql = base_sql + " ORDER BY i.quantity ASC LIMIT 20"
-                    rows = await fetch(sql)casting functionality with improved error handling
+Spare Parts Forecast Engine for EV SCMMS AI Chatbot - AI-Powered Version
+Integrated forecasting functionality with AI analysis and improved error handling
 """
 import os
 import sys
@@ -89,10 +81,10 @@ class ForecastEngine:
                 
                 if center_id:
                     sql = base_sql + " AND i.centerid = %s ORDER BY i.quantity ASC LIMIT 50"
-                    rows = fetch(sql, (center_id,))
+                    rows = await fetch(sql, center_id)
                 else:
                     sql = base_sql + " ORDER BY i.quantity ASC LIMIT 50"
-                    rows = fetch(sql)
+                    rows = await fetch(sql)
                 
                 print(f"  📊 Retrieved {len(rows) if rows else 0} inventory records")
                 return {"inventory": rows or [], "total_count": len(rows) if rows else 0}
@@ -121,7 +113,7 @@ class ForecastEngine:
                     params.append(center_id)
                     
                 sql += " ORDER BY h.useddate DESC LIMIT 100"
-                rows = fetch(sql, tuple(params))
+                rows = await fetch(sql, *params)
                 print(f"  📈 Retrieved {len(rows) if rows else 0} usage history records")
                 return {"usage_history": rows or [], "total_count": len(rows) if rows else 0, "months_covered": months}
             
@@ -132,7 +124,7 @@ class ForecastEngine:
             return {"error": f"Database error in {function_name}: {str(e)}"}
     
     async def generate_simple_forecast(self, data_dict: dict, forecast_months: int = 6):
-        """Generate a simple forecast using direct data analysis (fallback method)."""
+        """Generate AI-powered forecast using simplified prompt (fallback method)."""
         try:
             spare_parts = data_dict.get("spare_parts", {}).get("spare_parts", [])
             inventory = data_dict.get("inventory", {}).get("inventory", [])
@@ -143,7 +135,7 @@ class ForecastEngine:
             # If no data available, return informative message
             if not spare_parts and not inventory:
                 return {
-                    "data_source": "supabase_real_data",
+                    "data_source": "no_data_available",
                     "success": True,
                     "forecast_period_months": forecast_months,
                     "analysis_date": datetime.now().strftime('%Y-%m-%d'),
@@ -161,90 +153,106 @@ class ForecastEngine:
                     }
                 }
             
-            # Simple analysis-based forecast
-            forecasts = []
-            parts_to_analyze = spare_parts[:10] if len(spare_parts) > 10 else spare_parts  # Limit for performance
+            # Use AI for simplified analysis
+            try:
+                simple_prompt = f"""
+                Phân tích nhanh dữ liệu phụ tùng xe điện và đưa ra dự báo {forecast_months} tháng:
+                
+                PHỤTÙNG: {json.dumps(spare_parts[:3], ensure_ascii=False)}
+                TỒNKHO: {json.dumps(inventory[:3], ensure_ascii=False)}
+                
+                Trả về JSON (không thêm text khác):
+                {{
+                    "forecast_period_months": {forecast_months},
+                    "analysis_date": "{datetime.now().strftime('%Y-%m-%d')}",
+                    "spare_parts_forecasts": [
+                        {{
+                            "spare_part_id": "từ dữ liệu",
+                            "part_name": "từ dữ liệu", 
+                            "total_forecast_demand": "số dự báo",
+                            "replenishment_needed": true,
+                            "estimated_cost": "chi phí",
+                            "urgency_level": "high"
+                        }}
+                    ],
+                    "summary": {{
+                        "total_parts_analyzed": 3,
+                        "parts_needing_replenishment": 2,
+                        "total_estimated_cost": 500000,
+                        "message": "Kết quả phân tích"
+                    }}
+                }}
+                """
+                
+                response = self.model.generate_content(simple_prompt)
+                
+                if hasattr(response, 'text') and response.text:
+                    response_text = response.text.strip()
+                    # Clean markdown
+                    if response_text.startswith('```json'):
+                        response_text = response_text[7:]
+                    if response_text.endswith('```'):
+                        response_text = response_text[:-3]
+                    response_text = response_text.strip()
+                    
+                    ai_result = json.loads(response_text)
+                    print("  ✅ AI simple forecast successful")
+                    return {
+                        "data_source": "ai_simple_analysis",
+                        "success": True,
+                        **ai_result
+                    }
+                    
+            except Exception as ai_error:
+                print(f"  ⚠️ AI simple forecast failed: {ai_error}")
             
-            for part in spare_parts[:5]:  # Limit to 5 parts for demo
-                part_id = part.get("sparepartid") or part.get("SparePartID")
-                part_name = part.get("name") or part.get("Name", "Unknown Part")
+            # Final fallback - basic structured response
+            print("  🔄 Using basic structured fallback...")
+            
+            # Create basic forecast from available data
+            forecasts = []
+            for i, part in enumerate(spare_parts[:3]):
+                part_id = part.get("sparepartid") or part.get("SparePartID") or f"part_{i+1}"
+                part_name = part.get("name") or part.get("Name") or f"Phụ tùng {i+1}"
+                unit_price = part.get("unitprice") or part.get("UnitPrice") or 100000
                 
-                # Find current inventory (note: no direct link in current schema)
-                current_stock = 0
-                min_stock = 10
-                # For demo purposes, assign random inventory data
-                for inv in inventory:
-                    current_stock = inv.get("quantity") or inv.get("Quantity", 0)
-                    min_stock = inv.get("minimumstocklevel") or inv.get("MinimumStockLevel", 10)
-                    break  # Use first inventory record for demo
-                
-                # Calculate usage pattern
-                monthly_usage = []
-                for usage in usage_history:
-                    if usage["sparepartid"] == part_id:
-                        monthly_usage.append(usage["quantityused"])
-                
-                avg_monthly_usage = sum(monthly_usage) / max(1, len(monthly_usage)) if monthly_usage else 5
-                
-                # Generate monthly forecasts
-                monthly_forecasts = []
-                for month in range(1, forecast_months + 1):
-                    # Simple prediction with slight variation
-                    predicted = max(1, int(avg_monthly_usage * (1 + (month * 0.05))))
-                    monthly_forecasts.append({
-                        "month": month,
-                        "predicted_demand": predicted,
-                        "confidence": 0.75
-                    })
-                
-                total_forecast = sum(m["predicted_demand"] for m in monthly_forecasts)
-                replenishment_needed = current_stock < (total_forecast + min_stock)
+                # Basic forecast calculation
+                base_demand = 5 + (i * 2)  # Simple progression
+                total_demand = base_demand * forecast_months
                 
                 forecasts.append({
                     "spare_part_id": part_id,
                     "part_name": part_name,
-                    "current_stock": current_stock,
-                    "minimum_stock_level": min_stock,
-                    "monthly_forecasts": monthly_forecasts,
-                    "total_forecast_demand": total_forecast,
-                    "replenishment_needed": replenishment_needed,
-                    "suggested_order_quantity": max(0, total_forecast + min_stock - current_stock),
-                    "estimated_cost": (max(0, total_forecast + min_stock - current_stock) * part.get("unitprice", 100)),
-                    "urgency_level": "high" if replenishment_needed else "low"
+                    "total_forecast_demand": total_demand,
+                    "replenishment_needed": True,
+                    "estimated_cost": total_demand * unit_price,
+                    "urgency_level": "medium"
                 })
             
-            # Enhanced summary with actionable insights
-            parts_needing_replenishment = sum(1 for f in forecasts if f["replenishment_needed"])
             total_cost = sum(f["estimated_cost"] for f in forecasts)
             
-            summary_message = f"Đã phân tích {len(forecasts)} phụ tùng cho dự báo {forecast_months} tháng tới."
-            if parts_needing_replenishment > 0:
-                summary_message += f" Có {parts_needing_replenishment} phụ tùng cần bổ sung với tổng chi phí dự kiến {total_cost:,.0f} VND."
-            else:
-                summary_message += " Tất cả phụ tùng hiện tại đủ để đáp ứng nhu cầu trong thời gian dự báo."
-            
             return {
-                "data_source": "supabase_real_data",
+                "data_source": "basic_fallback",
                 "success": True,
                 "forecast_period_months": forecast_months,
                 "analysis_date": datetime.now().strftime('%Y-%m-%d'),
                 "spare_parts_forecasts": forecasts,
                 "summary": {
                     "total_parts_analyzed": len(forecasts),
-                    "parts_needing_replenishment": parts_needing_replenishment,
+                    "parts_needing_replenishment": len(forecasts),
                     "total_estimated_cost": total_cost,
-                    "message": summary_message,
+                    "message": f"Đã tạo dự báo cơ bản cho {len(forecasts)} phụ tùng trong {forecast_months} tháng với tổng chi phí dự kiến {total_cost:,.0f} VND.",
                     "recommendations": [
-                        f"Ưu tiên bổ sung {parts_needing_replenishment} phụ tùng cần thiết" if parts_needing_replenishment > 0 else "Duy trì mức tồn kho hiện tại",
-                        "Theo dõi xu hướng sử dụng hàng tháng",
-                        "Cập nhật dữ liệu inventory thường xuyên"
+                        "Cập nhật thêm dữ liệu lịch sử sử dụng để cải thiện độ chính xác",
+                        "Theo dõi xu hướng sử dụng thực tế",
+                        "Xem xét điều chỉnh mức tồn kho tối thiểu"
                     ]
                 }
             }
             
         except Exception as e:
             return {
-                "data_source": "supabase_real_data", 
+                "data_source": "error_fallback", 
                 "success": False,
                 "error": f"Simple forecast error: {str(e)}"
             }
@@ -296,27 +304,53 @@ class ForecastEngine:
             print("🤖 Attempting AI-based forecast...")
             
             try:
+                # Prepare detailed data for AI analysis
+                spare_parts_data = data_results['spare_parts'].get('spare_parts', [])
+                inventory_data = data_results['inventory'].get('inventory', [])
+                
                 forecast_prompt = f"""
-                Analyze this EV service center spare parts data and generate a {forecast_months}-month demand forecast.
+                Bạn là chuyên gia phân tích dự báo phụ tùng cho trung tâm bảo dưỡng xe điện. 
+                Hãy phân tích dữ liệu thực tế sau và đưa ra dự báo nhu cầu {forecast_months} tháng tới.
                 
-                Data Summary:
-                - Spare Parts: {len(data_results['spare_parts'].get('spare_parts', []))} items
-                - Current Inventory: {len(data_results['inventory'].get('inventory', []))} records  
-                - Usage History: {len(data_results['usage_history'].get('usage_history', []))} records
+                DỮ LIỆU PHỤ TÙNG ({len(spare_parts_data)} items):
+                {json.dumps(spare_parts_data[:5], indent=2, ensure_ascii=False) if spare_parts_data else 'Không có dữ liệu'}
                 
-                Please analyze the patterns and return ONLY a JSON forecast in this format:
+                DỮ LIỆU TỒN KHO ({len(inventory_data)} records):
+                {json.dumps(inventory_data[:5], indent=2, ensure_ascii=False) if inventory_data else 'Không có dữ liệu'}
+                
+                YÊU CẦU PHÂN TÍCH:
+                1. Đánh giá mức tồn kho hiện tại so với mức tối thiểu
+                2. Dự báo nhu cầu sử dụng dựa trên loại phụ tùng và giá trị
+                3. Xác định độ ưu tiên bổ sung (phụ tùng đắt tiền = ưu tiên cao)
+                4. Tính toán chi phí dự kiến
+                
+                Trả về CHÍNH XÁC định dạng JSON sau (không thêm text khác):
                 {{
                     "forecast_period_months": {forecast_months},
                     "analysis_date": "{datetime.now().strftime('%Y-%m-%d')}",
                     "spare_parts_forecasts": [
                         {{
-                            "spare_part_id": "id",
-                            "part_name": "name", 
-                            "total_forecast_demand": 50,
-                            "replenishment_needed": true
+                            "spare_part_id": "ID từ dữ liệu thực",
+                            "part_name": "Tên từ dữ liệu thực",
+                            "current_stock": "số lượng tồn kho hiện tại",
+                            "minimum_stock_level": "mức tồn kho tối thiểu",
+                            "total_forecast_demand": "dự báo nhu cầu tổng",
+                            "monthly_forecasts": [
+                                {{"month": 1, "predicted_demand": "số dự báo", "confidence": "độ tin cậy 0-1"}}
+                            ],
+                            "replenishment_needed": "true/false",
+                            "suggested_order_quantity": "số lượng đề xuất đặt hàng",
+                            "estimated_cost": "chi phí dự kiến",
+                            "urgency_level": "high/medium/low"
                         }}
                     ],
-                    "summary": {{"total_parts_analyzed": 5}}
+                    "summary": {{
+                        "total_parts_analyzed": "số phụ tùng đã phân tích",
+                        "parts_needing_replenishment": "số phụ tùng cần bổ sung",
+                        "total_estimated_cost": "tổng chi phí dự kiến",
+                        "message": "thông điệp tóm tắt bằng tiếng Việt",
+                        "recommendations": ["danh sách khuyến nghị"]
+                    }}
                 }}
                 """
                 
@@ -325,16 +359,26 @@ class ForecastEngine:
                 # Check if response has text
                 if hasattr(response, 'text') and response.text:
                     try:
+                        # Clean response text
+                        response_text = response.text.strip()
+                        # Remove any markdown code blocks
+                        if response_text.startswith('```json'):
+                            response_text = response_text[7:]
+                        if response_text.endswith('```'):
+                            response_text = response_text[:-3]
+                        response_text = response_text.strip()
+                        
                         # Try to parse as JSON
-                        ai_forecast = json.loads(response.text.strip())
+                        ai_forecast = json.loads(response_text)
                         print("  ✅ AI forecast generated successfully")
                         return {
-                            "data_source": "supabase_real_data",
+                            "data_source": "ai_analysis_real_data",
                             "success": True,
                             **ai_forecast
                         }
-                    except json.JSONDecodeError:
-                        print("  ⚠️ AI response not valid JSON, using fallback")
+                    except json.JSONDecodeError as je:
+                        print(f"  ⚠️ AI response not valid JSON: {je}, using fallback")
+                        print(f"  📝 AI Response: {response.text[:200]}...")
                 else:
                     print("  ⚠️ AI response empty or blocked, using fallback")
                     
@@ -342,7 +386,7 @@ class ForecastEngine:
                 print(f"  ⚠️ AI forecast failed: {str(e)}, using fallback")
             
             # Step 3: Use fallback simple forecast
-            print("🔄 Using simple analysis-based forecast...")
+            print("🔄 Using simplified AI forecast...")
             return await self.generate_simple_forecast(data_results, forecast_months)
             
         except Exception as e:
