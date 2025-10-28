@@ -417,10 +417,26 @@ class GeminiMCPChatbot:
             
             # If part_name is provided, find spare_part_id first
             if part_name and not spare_part_id:
-                find_sql = "SELECT sparepartid FROM sparepart_tuht WHERE name ILIKE %s AND isactive = true LIMIT 1"
+                find_sql = "SELECT sparepartid, name, unitprice, manufacture FROM sparepart_tuht WHERE name ILIKE %s AND isactive = true LIMIT 1"
                 find_rows = await fetch(find_sql, f"%{part_name}%")
                 if find_rows:
                     spare_part_id = find_rows[0].get("sparepartid")
+                    part_info = find_rows[0]
+                else:
+                    return {
+                        "error": "part_not_found",
+                        "message": f"Không tìm thấy phụ tùng '{part_name}' trong hệ thống",
+                        "searched_part_name": part_name
+                    }
+            else:
+                part_info = None
+            
+            # Only proceed if we have spare_part_id
+            if not spare_part_id:
+                return {
+                    "error": "no_part_specified",
+                    "message": "Cần chỉ định phụ tùng cụ thể để dự báo"
+                }
             
             try:
                 # Use integrated forecast engine
@@ -432,9 +448,8 @@ class GeminiMCPChatbot:
                     forecast_months=max(1, min(12, months))
                 )
                 
-                # Get spare part info for response
-                part_info = None
-                if spare_part_id:
+                # Get spare part info if not already retrieved
+                if not part_info and spare_part_id:
                     part_sql = "SELECT name, unitprice, manufacture FROM sparepart_tuht WHERE sparepartid = %s"
                     part_rows = await fetch(part_sql, spare_part_id)
                     if part_rows:
