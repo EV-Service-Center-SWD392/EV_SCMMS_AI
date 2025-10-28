@@ -98,7 +98,7 @@ class GeminiMCPChatbot:
                 name="get_usage_history",
                 description=(
                     "Lấy lịch sử sử dụng phụ tùng để phân tích xu hướng và dự báo nhu cầu. "
-                    "Có thể lọc theo phụ tùng và trung tâm, trong khoảng 1-24 tháng."
+                    "Có thể lọc theo tên phụ tùng, ID phụ tùng và trung tâm, trong khoảng 1-24 tháng."
                 ),
                 parameters=genai.protos.Schema(
                     type=genai.protos.Type.OBJECT,
@@ -106,6 +106,10 @@ class GeminiMCPChatbot:
                         "months": genai.protos.Schema(
                             type=genai.protos.Type.INTEGER,
                             description="Số tháng lịch sử cần xem (1-24)"
+                        ),
+                        "part_name": genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            description="Tên phụ tùng để tìm kiếm (tùy chọn)"
                         ),
                         "spare_part_id": genai.protos.Schema(
                             type=genai.protos.Type.STRING,
@@ -122,7 +126,7 @@ class GeminiMCPChatbot:
                 name="forecast_demand",
                 description=(
                     "Dự báo nhu cầu phụ tùng trong tương lai (1-12 tháng) bằng AI. "
-                    "Có thể dự báo cho từng phụ tùng và từng trung tâm."
+                    "Có thể dự báo cho từng phụ tùng theo tên hoặc ID và từng trung tâm."
                 ),
                 parameters=genai.protos.Schema(
                     type=genai.protos.Type.OBJECT,
@@ -130,6 +134,10 @@ class GeminiMCPChatbot:
                         "months": genai.protos.Schema(
                             type=genai.protos.Type.INTEGER,
                             description="Số tháng cần dự báo (1-12)"
+                        ),
+                        "part_name": genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            description="Tên phụ tùng để dự báo (tùy chọn)"
                         ),
                         "spare_part_id": genai.protos.Schema(
                             type=genai.protos.Type.STRING,
@@ -341,10 +349,13 @@ class GeminiMCPChatbot:
         
         elif function_name == "get_usage_history":
             months = arguments.get("months", 6)
+            part_name = arguments.get("part_name")
             spare_part_id = arguments.get("spare_part_id")
             center_id = arguments.get("center_id")
             
             # Filter out None values
+            if part_name in [None, "None", ""]:
+                part_name = None
             if spare_part_id in [None, "None", ""]:
                 spare_part_id = None
             if center_id in [None, "None", ""]:
@@ -362,6 +373,9 @@ class GeminiMCPChatbot:
             """
             params = [months]
             
+            if part_name:
+                sql += " AND s.name ILIKE %s"
+                params.append(f"%{part_name}%")
             if spare_part_id:
                 sql += " AND h.sparepartid = %s"
                 params.append(spare_part_id)
@@ -389,14 +403,24 @@ class GeminiMCPChatbot:
         
         elif function_name == "forecast_demand":
             months = arguments.get("months", 6)
+            part_name = arguments.get("part_name")
             spare_part_id = arguments.get("spare_part_id")
             center_id = arguments.get("center_id")
             
             # Filter out None values
+            if part_name in [None, "None", ""]:
+                part_name = None
             if spare_part_id in [None, "None", ""]:
                 spare_part_id = None
             if center_id in [None, "None", ""]:
                 center_id = None
+            
+            # If part_name is provided, find spare_part_id first
+            if part_name and not spare_part_id:
+                find_sql = "SELECT sparepartid FROM sparepart_tuht WHERE name ILIKE %s AND isactive = true LIMIT 1"
+                find_rows = await fetch(find_sql, f"%{part_name}%")
+                if find_rows:
+                    spare_part_id = find_rows[0].get("sparepartid")
             
             try:
                 # Use integrated forecast engine
