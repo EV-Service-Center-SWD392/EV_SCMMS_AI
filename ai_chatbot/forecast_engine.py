@@ -498,52 +498,85 @@ class ForecastEngine:
     async def generate_forecast(self, spare_part_id: str = None, center_id: str = None, forecast_months: int = 6):
         """Generate forecast with fallback mechanism for better reliability."""
         
-        print(f"🔮 Generating forecast for {forecast_months} months...")
+        print(f"🔮 Generating forecast for {forecast_months} months... spare_part_id={spare_part_id}")
         
         try:
-            # Step 1: Collect all data first - Use direct database connection
+            # Step 1: Collect data based on spare_part_id
             print("📊 Collecting data from database...")
             
             from db_connection import fetch
             
-            # Get ALL spare parts (no limit)
-            print("  🔍 Fetching ALL spare parts...")
-            spare_parts = await fetch("""
-                SELECT SparePartID, Name, UnitPrice, Manufacture, IsActive
-                FROM SparePart_TuHT 
-                WHERE IsActive = true 
-                ORDER BY UnitPrice DESC
-            """)
-            print(f"  ✅ Spare parts: {len(spare_parts)} items")
+            # IMPORTANT: If spare_part_id is provided, ONLY get that specific part
+            if spare_part_id:
+                print(f"  🔍 Fetching SPECIFIC spare part: {spare_part_id}")
+                spare_parts = await fetch("""
+                    SELECT SparePartID, Name, UnitPrice, Manufacture, IsActive
+                    FROM SparePart_TuHT 
+                    WHERE SparePartID = %s AND IsActive = true
+                """, spare_part_id)
+                print(f"  ✅ Found {len(spare_parts)} specific part(s)")
+            else:
+                print("  🔍 Fetching ALL spare parts...")
+                spare_parts = await fetch("""
+                    SELECT SparePartID, Name, UnitPrice, Manufacture, IsActive
+                    FROM SparePart_TuHT 
+                    WHERE IsActive = true 
+                    ORDER BY UnitPrice DESC
+                """)
+                print(f"  ✅ Spare parts: {len(spare_parts)} items")
             
-            # Get ALL inventory with SparePartID for matching
-            print("  🔍 Fetching ALL inventory with SparePartID...")
-            inventory = await fetch("""
-                SELECT i.InventoryID, i.CenterID, i.Quantity, 
-                       i.MinimumStockLevel, i.IsActive,
-                       s.SparePartID, s.Name as PartName
-                FROM Inventory_TuHT i
-                LEFT JOIN SparePart_TuHT s ON i.InventoryID = s.InventoryID
-                WHERE i.IsActive = true AND s.IsActive = true
-                ORDER BY i.Quantity ASC
-            """)
+            # Get inventory based on spare_part_id
+            if spare_part_id:
+                print(f"  🔍 Fetching inventory for specific part: {spare_part_id}")
+                inventory = await fetch("""
+                    SELECT i.InventoryID, i.CenterID, i.Quantity, 
+                           i.MinimumStockLevel, i.IsActive,
+                           s.SparePartID, s.Name as PartName
+                    FROM Inventory_TuHT i
+                    LEFT JOIN SparePart_TuHT s ON i.InventoryID = s.InventoryID
+                    WHERE i.IsActive = true AND s.IsActive = true AND s.SparePartID = %s
+                    ORDER BY i.Quantity ASC
+                """, spare_part_id)
+            else:
+                print("  🔍 Fetching ALL inventory with SparePartID...")
+                inventory = await fetch("""
+                    SELECT i.InventoryID, i.CenterID, i.Quantity, 
+                           i.MinimumStockLevel, i.IsActive,
+                           s.SparePartID, s.Name as PartName
+                    FROM Inventory_TuHT i
+                    LEFT JOIN SparePart_TuHT s ON i.InventoryID = s.InventoryID
+                    WHERE i.IsActive = true AND s.IsActive = true
+                    ORDER BY i.Quantity ASC
+                """)
             print(f"  ✅ Inventory: {len(inventory)} items")
-            if inventory:
-                print(f"  🔍 First inventory keys: {list(inventory[0].keys())}")
             
-            # Get usage history for analysis
-            print("  🔍 Fetching usage history...")
-            usage_history = await fetch("""
-                SELECT h.UsageID, h.SparePartID, h.CenterID, h.QuantityUsed, h.UsedDate,
-                       s.Name as PartName, s.UnitPrice, s.Manufacture,
-                       EXTRACT(MONTH FROM h.UsedDate) as UsageMonth,
-                       EXTRACT(YEAR FROM h.UsedDate) as UsageYear
-                FROM SparePartUsageHistory_TuHT h
-                LEFT JOIN SparePart_TuHT s ON h.SparePartID = s.SparePartID
-                WHERE h.IsActive = true AND s.IsActive = true
-                  AND h.UsedDate >= (CURRENT_DATE - INTERVAL '24 months')
-                ORDER BY h.UsedDate DESC
-            """)
+            # Get usage history based on spare_part_id
+            if spare_part_id:
+                print(f"  🔍 Fetching usage history for specific part: {spare_part_id}")
+                usage_history = await fetch("""
+                    SELECT h.UsageID, h.SparePartID, h.CenterID, h.QuantityUsed, h.UsedDate,
+                           s.Name as PartName, s.UnitPrice, s.Manufacture,
+                           EXTRACT(MONTH FROM h.UsedDate) as UsageMonth,
+                           EXTRACT(YEAR FROM h.UsedDate) as UsageYear
+                    FROM SparePartUsageHistory_TuHT h
+                    LEFT JOIN SparePart_TuHT s ON h.SparePartID = s.SparePartID
+                    WHERE h.IsActive = true AND s.IsActive = true AND h.SparePartID = %s
+                      AND h.UsedDate >= (CURRENT_DATE - INTERVAL '24 months')
+                    ORDER BY h.UsedDate DESC
+                """, spare_part_id)
+            else:
+                print("  🔍 Fetching usage history...")
+                usage_history = await fetch("""
+                    SELECT h.UsageID, h.SparePartID, h.CenterID, h.QuantityUsed, h.UsedDate,
+                           s.Name as PartName, s.UnitPrice, s.Manufacture,
+                           EXTRACT(MONTH FROM h.UsedDate) as UsageMonth,
+                           EXTRACT(YEAR FROM h.UsedDate) as UsageYear
+                    FROM SparePartUsageHistory_TuHT h
+                    LEFT JOIN SparePart_TuHT s ON h.SparePartID = s.SparePartID
+                    WHERE h.IsActive = true AND s.IsActive = true
+                      AND h.UsedDate >= (CURRENT_DATE - INTERVAL '24 months')
+                    ORDER BY h.UsedDate DESC
+                """)
             print(f"  ✅ Usage history: {len(usage_history)} records")
             
             # Prepare comprehensive data results
