@@ -126,7 +126,8 @@ class GeminiMCPChatbot:
                 name="forecast_demand",
                 description=(
                     "Dự báo nhu cầu phụ tùng trong tương lai (1-12 tháng) bằng AI. "
-                    "Có thể dự báo cho từng phụ tùng theo tên hoặc ID và từng trung tâm."
+                    "Luôn gọi function này khi người dùng yêu cầu dự báo. "
+                    "Nếu không có tên phụ tùng thì dự báo tổng thể. Nếu có tên thì dự báo riêng."
                 ),
                 parameters=genai.protos.Schema(
                     type=genai.protos.Type.OBJECT,
@@ -205,7 +206,7 @@ class GeminiMCPChatbot:
                     mode=genai.protos.FunctionCallingConfig.Mode.AUTO
                 )
             ),
-            system_instruction="AI trợ lý phụ tùng xe điện EV Service Center. Khi người dùng hỏi về phụ tùng→gọi get_spare_parts MỘT LẦN, tồn kho→get_inventory, lịch sử→get_usage_history, dự báo→forecast_demand. Chỉ gọi function 1 lần cho mỗi yêu cầu. Khi dự báo phụ tùng cụ thể, hãy đề cập tên phụ tùng và kết quả dự báo chi tiết.",
+            system_instruction="AI trợ lý phụ tùng xe điện EV Service Center. QUAN TRỌNG: Khi người dùng nói 'dự báo' thì LUÔN gọi forecast_demand. Nếu có tên phụ tùng thì truyền part_name, nếu không thì để trống. Không hỏi lại người dùng. Các function khác: phụ tùng→get_spare_parts, tồn kho→get_inventory, lịch sử→get_usage_history.",
             generation_config={
                 "temperature": 0.3,
                 "top_p": 0.8,
@@ -407,6 +408,8 @@ class GeminiMCPChatbot:
             spare_part_id = arguments.get("spare_part_id")
             center_id = arguments.get("center_id")
             
+            print(f"🔍 Forecast arguments: months={months}, part_name='{part_name}', spare_part_id='{spare_part_id}', center_id='{center_id}'")
+            
             # Filter out None values
             if part_name in [None, "None", ""]:
                 part_name = None
@@ -414,6 +417,8 @@ class GeminiMCPChatbot:
                 spare_part_id = None
             if center_id in [None, "None", ""]:
                 center_id = None
+            
+            print(f"🔍 After filtering: part_name='{part_name}', spare_part_id='{spare_part_id}'")
             
             try:
                 # Use integrated forecast engine
