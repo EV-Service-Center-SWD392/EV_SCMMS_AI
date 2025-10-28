@@ -194,7 +194,7 @@ class GeminiMCPChatbot:
             tools=[genai.protos.Tool(function_declarations=self.function_declarations)],
             tool_config=genai.protos.ToolConfig(
                 function_calling_config=genai.protos.FunctionCallingConfig(
-                    mode=genai.protos.FunctionCallingConfig.Mode.ANY
+                    mode=genai.protos.FunctionCallingConfig.Mode.AUTO
                 )
             ),
             system_instruction="AI trợ lý phụ tùng xe điện EV Service Center. Khi người dùng hỏi về phụ tùng→gọi get_spare_parts MỘT LẦN, tồn kho→get_inventory, lịch sử→get_usage_history, dự báo→forecast_demand. Chỉ gọi function 1 lần cho mỗi yêu cầu.",
@@ -202,6 +202,17 @@ class GeminiMCPChatbot:
                 "temperature": 0.3,
                 "top_p": 0.8,
                 "max_output_tokens": 512  # Reduce output tokens
+            }
+        )
+        
+        # Fallback model without function calling
+        self.fallback_model = genai.GenerativeModel(
+            model_name="gemini-2.5-flash",
+            system_instruction="AI trợ lý thân thiện cho hệ thống quản lý phụ tùng xe điện EV Service Center. Trả lời các câu hỏi chung về xe điện, bảo dưỡng, và hỗ trợ khách hàng.",
+            generation_config={
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "max_output_tokens": 512
             }
         )
         
@@ -489,36 +500,72 @@ class GeminiMCPChatbot:
                         
                         print(f"🔧 Function call: {function_name}({function_args})")
                         
-                        # Call MCP function
-                        function_result = await self.call_mcp_function(function_name, function_args)
-                        function_results.append({
-                            "function": function_name,
-                            "args": function_args,
-                            "result": function_result
-                        })
-                        
-                        # Send result back to Gemini
-                        response = chat.send_message(
-                            genai.protos.Content(
-                                parts=[genai.protos.Part(
-                                    function_response=genai.protos.FunctionResponse(
-                                        name=function_name,
-                                        response={"result": json.dumps(function_result, default=str)}
-                                    )
-                                )]
+                        # Call MCP function with error handling
+                        try:
+                            function_result = await self.call_mcp_function(function_name, function_args)
+                            # Check if function returned error
+                            if "error" in function_result:
+                                print(f"⚠️ Function error: {function_result['error']}")
+                                # Fallback to generative chat
+                                fallback_response = self.fallback_model.generate_content(message)
+                                return {
+                                    "success": True,
+                                    "response": fallback_response.text,
+                                    "mode": "generative_fallback",
+                                    "conversation_id": conversation_id,
+                                    "timestamp": datetime.now().isoformat()
+                                }
+                            
+                            function_results.append({
+                                "function": function_name,
+                                "args": function_args,
+                                "result": function_result
+                            })
+                            
+                            # Send result back to Gemini
+                            response = chat.send_message(
+                                genai.protos.Content(
+                                    parts=[genai.protos.Part(
+                                        function_response=genai.protos.FunctionResponse(
+                                            name=function_name,
+                                            response={"result": json.dumps(function_result, default=str)}
+                                        )
+                                    )]
+                                )
                             )
-                        )
+                        except Exception as func_error:
+                            print(f"⚠️ Function call failed: {func_error}")
+                            # Fallback to generative chat
+                            fallback_response = self.fallback_model.generate_content(message)
+                            return {
+                                "success": True,
+                                "response": fallback_response.text,
+                                "mode": "generative_fallback",
+                                "conversation_id": conversation_id,
+                                "timestamp": datetime.now().isoformat()
+                            }
                         break
                 
                 if not has_function_call:
                     break
             
-            # Get final response
+            # Get final response or fallback to generative chat
             try:
                 ai_response = response.text if response.text else "Đã xử lý yêu cầu thành công."
+                
+                # If no function was called and response is empty/generic, use fallback
+                if not function_results and (not ai_response or len(ai_response.strip()) < 10):
+                    fallback_response = self.fallback_model.generate_content(message)
+                    ai_response = fallback_response.text
+                    
             except Exception as e:
                 print(f"⚠️ Error getting response text: {e}")
-                ai_response = "Đã xử lý yêu cầu thành công."
+                # Fallback to generative chat on error
+                try:
+                    fallback_response = self.fallback_model.generate_content(message)
+                    ai_response = fallback_response.text
+                except:
+                    ai_response = "Đã xử lý yêu cầu thành công."
             
             # Save to conversation history
             self.conversation_manager.add_message(
