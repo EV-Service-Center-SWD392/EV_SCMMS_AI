@@ -205,7 +205,7 @@ class GeminiMCPChatbot:
                     mode=genai.protos.FunctionCallingConfig.Mode.AUTO
                 )
             ),
-            system_instruction="AI trợ lý phụ tùng xe điện EV Service Center. Khi người dùng hỏi về phụ tùng→gọi get_spare_parts MỘT LẦN, tồn kho→get_inventory, lịch sử→get_usage_history, dự báo→forecast_demand. Chỉ gọi function 1 lần cho mỗi yêu cầu.",
+            system_instruction="AI trợ lý phụ tùng xe điện EV Service Center. Khi người dùng hỏi về phụ tùng→gọi get_spare_parts MỘT LẦN, tồn kho→get_inventory, lịch sử→get_usage_history, dự báo→forecast_demand. Chỉ gọi function 1 lần cho mỗi yêu cầu. Khi dự báo phụ tùng cụ thể, hãy đề cập tên phụ tùng và kết quả dự báo chi tiết.",
             generation_config={
                 "temperature": 0.3,
                 "top_p": 0.8,
@@ -432,9 +432,19 @@ class GeminiMCPChatbot:
                     forecast_months=max(1, min(12, months))
                 )
                 
+                # Get spare part info for response
+                part_info = None
+                if spare_part_id:
+                    part_sql = "SELECT name, unitprice, manufacture FROM sparepart_tuht WHERE sparepartid = %s"
+                    part_rows = await fetch(part_sql, spare_part_id)
+                    if part_rows:
+                        part_info = part_rows[0]
+                
                 return {
                     "forecast_months": months,
                     "forecast_result": forecast_result,
+                    "part_info": part_info,
+                    "searched_part_name": part_name,
                     "data_source": "integrated_supabase_engine",
                     "message": f"Dự báo cho {months} tháng tới đã hoàn thành"
                 }
