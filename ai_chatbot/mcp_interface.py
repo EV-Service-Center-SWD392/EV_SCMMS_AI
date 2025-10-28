@@ -415,32 +415,26 @@ class GeminiMCPChatbot:
             if center_id in [None, "None", ""]:
                 center_id = None
             
-            # If part_name is provided, find spare_part_id first
-            if part_name and not spare_part_id:
-                find_sql = "SELECT sparepartid, name, unitprice, manufacture FROM sparepart_tuht WHERE name ILIKE %s AND isactive = true LIMIT 1"
-                find_rows = await fetch(find_sql, f"%{part_name}%")
-                if find_rows:
-                    spare_part_id = find_rows[0].get("sparepartid")
-                    part_info = find_rows[0]
-                else:
-                    return {
-                        "error": "part_not_found",
-                        "message": f"Không tìm thấy phụ tùng '{part_name}' trong hệ thống",
-                        "searched_part_name": part_name
-                    }
-            else:
-                part_info = None
-            
-            # Only proceed if we have spare_part_id
-            if not spare_part_id:
-                return {
-                    "error": "no_part_specified",
-                    "message": "Cần chỉ định phụ tùng cụ thể để dự báo"
-                }
-            
             try:
                 # Use integrated forecast engine
                 from ai_chatbot.forecast_engine import run_forecast_async
+                
+                # If part_name is provided, find spare_part_id first
+                part_info = None
+                if part_name and not spare_part_id:
+                    find_sql = "SELECT sparepartid, name, unitprice, manufacture FROM sparepart_tuht WHERE name ILIKE %s AND isactive = true LIMIT 1"
+                    find_rows = await fetch(find_sql, f"%{part_name}%")
+                    if find_rows:
+                        spare_part_id = find_rows[0].get("sparepartid")
+                        part_info = find_rows[0]
+                    else:
+                        return {
+                            "forecast_months": months,
+                            "forecast_result": [],
+                            "part_info": None,
+                            "searched_part_name": part_name,
+                            "message": f"Không tìm thấy phụ tùng '{part_name}' trong hệ thống"
+                        }
                 
                 forecast_result = await run_forecast_async(
                     spare_part_id=spare_part_id,
@@ -465,6 +459,8 @@ class GeminiMCPChatbot:
                 }
             except Exception as e:
                 return {
+                    "forecast_months": months,
+                    "forecast_result": [],
                     "error": str(e),
                     "message": f"Dự báo cho {months} tháng tới - Lỗi hệ thống tích hợp"
                 }
@@ -600,12 +596,25 @@ class GeminiMCPChatbot:
             
             # Get final response or fallback to generative chat
             try:
-                ai_response = response.text if response.text else "Đã xử lý yêu cầu thành công."
+                # Check if response has valid text
+                ai_response = ""
+                if hasattr(response, 'text') and response.text:
+                    ai_response = response.text
+                elif response.candidates and len(response.candidates) > 0:
+                    # Try to get text from candidates
+                    candidate = response.candidates[0]
+                    if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
+                        for part in candidate.content.parts:
+                            if hasattr(part, 'text') and part.text:
+                                ai_response += part.text
                 
-                # If no function was called and response is empty/generic, use fallback
-                if not function_results and (not ai_response or len(ai_response.strip()) < 10):
-                    fallback_response = self.fallback_model.generate_content(message)
-                    ai_response = fallback_response.text
+                # If still no response, use default or fallback
+                if not ai_response or len(ai_response.strip()) < 10:
+                    if function_results:
+                        ai_response = "Đã xử lý yêu cầu thành công."
+                    else:
+                        fallback_response = self.fallback_model.generate_content(message)
+                        ai_response = fallback_response.text
                     
             except Exception as e:
                 print(f"⚠️ Error getting response text: {e}")
