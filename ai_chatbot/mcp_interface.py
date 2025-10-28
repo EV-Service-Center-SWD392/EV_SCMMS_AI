@@ -424,7 +424,7 @@ class GeminiMCPChatbot:
                 # Use integrated forecast engine
                 from ai_chatbot.forecast_engine import run_forecast_async
                 
-                # If part_name is provided, find spare_part_id first
+                # If part_name is provided, find spare_part_id first and ONLY forecast that part
                 part_info = None
                 if part_name and not spare_part_id:
                     find_sql = "SELECT sparepartid, name, unitprice, manufacture FROM sparepart_tuht WHERE name ILIKE %s AND isactive = true LIMIT 1"
@@ -432,6 +432,7 @@ class GeminiMCPChatbot:
                     if find_rows:
                         spare_part_id = find_rows[0].get("sparepartid")
                         part_info = find_rows[0]
+                        print(f"🔍 Found part: {part_info['name']} with ID: {spare_part_id}")
                     else:
                         return {
                             "forecast_months": months,
@@ -441,11 +442,14 @@ class GeminiMCPChatbot:
                             "message": f"Không tìm thấy phụ tùng '{part_name}' trong hệ thống"
                         }
                 
+                # IMPORTANT: When part_name is provided, MUST pass spare_part_id to forecast only that specific part
                 forecast_result = await run_forecast_async(
-                    spare_part_id=spare_part_id,
+                    spare_part_id=spare_part_id if part_name else None,  # Force specific part when name provided
                     center_id=center_id, 
                     forecast_months=max(1, min(12, months))
                 )
+                
+                print(f"🔍 Forecast called with spare_part_id: {spare_part_id if part_name else 'None (all parts)'}")
                 
                 # Get spare part info if not already retrieved
                 if not part_info and spare_part_id:
