@@ -18,7 +18,7 @@ from flask_socketio import SocketIO, emit
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
 from ai_chatbot.mcp_interface import GeminiMCPChatbot
 # Configuration
-API_BASE_URL = os.getenv('API_BASE_URL', 'https://your-api-domain.com')
+API_BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:5020')
 DEFAULT_TECHNICIAN_COUNT = int(os.getenv('DEFAULT_TECHNICIAN_COUNT', '5'))
 
 
@@ -79,8 +79,54 @@ def extract_center_name(message):
         return match.group(1).strip()
     return "EV Service - Thủ Đức"  # Default center
 
+async def find_center_from_database(center_name):
+    """Tìm center trực tiếp từ database"""
+    try:
+        from db_connection import fetch
+        
+        if not center_name:
+            center_name = "EV Service - Thủ Đức"
+        
+        # Tìm chính xác trước
+        sql = "SELECT centerid, name FROM centertuantm WHERE name ILIKE %s AND isactive = true LIMIT 1"
+        rows = await fetch(sql, center_name)
+        
+        if rows:
+            print(f"✅ Found exact match in DB: '{rows[0]['name']}' - ID: {rows[0]['centerid']}")
+            return rows[0]['centerid']
+        
+        # Tìm fuzzy match
+        sql = "SELECT centerid, name FROM centertuantm WHERE name ILIKE %s AND isactive = true LIMIT 5"
+        rows = await fetch(sql, f"%{center_name}%")
+        
+        if rows:
+            print(f"✅ Found fuzzy match in DB: '{rows[0]['name']}' - ID: {rows[0]['centerid']}")
+            return rows[0]['centerid']
+        
+        # Tìm theo từ khóa
+        keywords = center_name.lower().replace('-', ' ').split()
+        for keyword in keywords:
+            if len(keyword) > 2:  # Chỉ tìm từ khóa dài hơn 2 ký tự
+                sql = "SELECT centerid, name FROM centertuantm WHERE name ILIKE %s AND isactive = true LIMIT 1"
+                rows = await fetch(sql, f"%{keyword}%")
+                if rows:
+                    print(f"✅ Found keyword match in DB: '{rows[0]['name']}' - ID: {rows[0]['centerid']}")
+                    return rows[0]['centerid']
+        
+        # Fallback: lấy center đầu tiên
+        sql = "SELECT centerid, name FROM centertuantm WHERE isactive = true LIMIT 1"
+        rows = await fetch(sql)
+        if rows:
+            print(f"⚠️ Using fallback center: '{rows[0]['name']}' - ID: {rows[0]['centerid']}")
+            return rows[0]['centerid']
+        
+        return None
+    except Exception as e:
+        print(f"❌ Database center search error: {e}")
+        return None
+
 def find_center_by_name(center_name):
-    """Tìm center ID từ tên center"""
+    """Tìm center ID từ tên center với logic tìm kiếm thông minh"""
     if not center_name:
         center_name = "EV Service - Thủ Đức"
     
@@ -89,18 +135,82 @@ def find_center_by_name(center_name):
     
     try:
         response = requests.get(url, headers=headers)
+        print(f"🔍 API Response Status: {response.status_code}")
+        
         if response.status_code == 200:
             centers = response.json()
-            # Tìm chính xác trước
+            print(f"🔍 Found {len(centers)} centers")
+            
+            # Debug: In ra tất cả center names
             for center in centers:
-                if center_name.lower() == center.get('name', '').lower():
-                    return center.get('id')
-            # Tìm gần giống
+                center_id = center.get('centerId') or center.get('id')
+                print(f"🏢 Center: '{center.get('name', 'No name')}' - ID: {center_id}")
+            
+            # Chuẩn hóa tên để tìm kiếm
+            search_name = center_name.lower().strip()
+            
+            # 1. Tìm chính xác trước
             for center in centers:
-                if center_name.lower() in center.get('name', '').lower() or center.get('name', '').lower() in center_name.lower():
-                    return center.get('id')
+                center_db_name = center.get('name', '').lower().strip()
+                if search_name == center_db_name:
+                    center_id = center.get('centerId') or center.get('id')
+                    print(f"✅ Exact match found: {center_id}")
+                    return center_id
+            
+            # 2. Tìm theo từ khóa chính (loại bỏ dấu, khoảng trắng)
+            search_keywords = search_name.replace('-', ' ').replace('_', ' ').split()
+            print(f"🔍 Search keywords: {search_keywords}")
+            
+            best_match = None
+            best_score = 0
+            
+            for center in centers:
+                center_db_name = center.get('name', '').lower().strip()
+                center_keywords = center_db_name.replace('-', ' ').replace('_', ' ').split()
+                
+                # Tính điểm khớp
+                score = 0
+                for keyword in search_keywords:
+                    if keyword in center_keywords:
+                        score += 1
+                    elif any(keyword in ck for ck in center_keywords):
+                        score += 0.5
+                
+                print(f"🔍 '{center_db_name}' score: {score}/{len(search_keywords)}")
+                
+                if score > best_score:
+                    best_score = score
+                    best_match = center
+            
+            # 3. Nếu có match tốt (ít nhất 50% từ khóa khớp)
+            if best_match and best_score >= len(search_keywords) * 0.5:
+                center_id = best_match.get('centerId') or best_match.get('id')
+                print(f"✅ Best match found: '{best_match.get('name')}' - ID: {center_id} (score: {best_score})")
+                return center_id
+            
+            # 4. Tìm kiếm mờ (substring)
+            for center in centers:
+                center_db_name = center.get('name', '').lower()
+                if (search_name in center_db_name or 
+                    center_db_name in search_name or
+                    any(keyword in center_db_name for keyword in search_keywords)):
+                    center_id = center.get('centerId') or center.get('id')
+                    print(f"✅ Fuzzy match found: '{center.get('name')}' - ID: {center_id}")
+                    return center_id
+            
+            # 5. Nếu không tìm thấy, trả về center đầu tiên (fallback)
+            if centers:
+                center_id = centers[0].get('centerId') or centers[0].get('id')
+                print(f"⚠️ No match found, using first center: '{centers[0].get('name')}' - ID: {center_id}")
+                return center_id
+                
+        else:
+            print(f"❌ API call failed with status: {response.status_code}")
+            print(f"📝 Response: {response.text}")
+            
         return None
-    except:
+    except Exception as e:
+        print(f"❌ Error calling API: {e}")
         return None
 
 def call_auto_assign_api(center_id, shift, work_date, required_count=None):
@@ -214,7 +324,12 @@ def api_chat():
             # Try to extract center name from message if center_id not provided
             if not center_id:
                 center_name = extract_center_name(message)  # Sẽ trả về default nếu không tìm thấy
-                center_id = find_center_by_name(center_name)
+                
+                # Try database first, then API fallback
+                try:
+                    center_id = asyncio.run(find_center_from_database(center_name))
+                except:
+                    center_id = find_center_by_name(center_name)
                 
                 if not center_id:
                     return jsonify({
