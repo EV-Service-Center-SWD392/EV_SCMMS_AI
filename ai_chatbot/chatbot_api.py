@@ -73,16 +73,16 @@ def extract_shifts(message):
 
 def extract_center_name(message):
     """Trích xuất tên center từ tin nhắn"""
-    pattern = r'ở\s+([^\s]+(?:\s+[^\s]+)*?)(?:\s|$)'
+    pattern = r'ở\s+(.+?)(?:\s*$|\s*,)'
     match = re.search(pattern, message)
     if match:
         return match.group(1).strip()
-    return None
+    return "EV Service - Thủ Đức"  # Default center
 
 def find_center_by_name(center_name):
     """Tìm center ID từ tên center"""
     if not center_name:
-        return None
+        center_name = "EV Service - Thủ Đức"
     
     url = f"{API_BASE_URL}/api/Center"
     headers = {'Content-Type': 'application/json'}
@@ -91,8 +91,13 @@ def find_center_by_name(center_name):
         response = requests.get(url, headers=headers)
         if response.status_code == 200:
             centers = response.json()
+            # Tìm chính xác trước
             for center in centers:
-                if center_name.lower() in center.get('name', '').lower():
+                if center_name.lower() == center.get('name', '').lower():
+                    return center.get('id')
+            # Tìm gần giống
+            for center in centers:
+                if center_name.lower() in center.get('name', '').lower() or center.get('name', '').lower() in center_name.lower():
                     return center.get('id')
         return None
     except:
@@ -208,13 +213,12 @@ def api_chat():
         if is_schedule_request(message):
             # Try to extract center name from message if center_id not provided
             if not center_id:
-                center_name = extract_center_name(message)
-                if center_name:
-                    center_id = find_center_by_name(center_name)
+                center_name = extract_center_name(message)  # Sẽ trả về default nếu không tìm thấy
+                center_id = find_center_by_name(center_name)
                 
                 if not center_id:
                     return jsonify({
-                        "response": "Không thể xác định trung tâm dịch vụ. Vui lòng chỉ rõ tên trung tâm hoặc cung cấp centerId.",
+                        "response": f"Không tìm thấy trung tâm '{center_name}' trong hệ thống.",
                         "success": False,
                         "conversation_id": conversation_id,
                         "timestamp": datetime.now().isoformat()
