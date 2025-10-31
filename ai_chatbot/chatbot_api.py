@@ -17,7 +17,9 @@ from flask_socketio import SocketIO, emit
 # Add shared directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
 from ai_chatbot.mcp_interface import GeminiMCPChatbot
-from config import API_BASE_URL, DEFAULT_TECHNICIAN_COUNT
+# Configuration
+API_BASE_URL = os.getenv('API_BASE_URL', 'https://your-api-domain.com')
+DEFAULT_TECHNICIAN_COUNT = int(os.getenv('DEFAULT_TECHNICIAN_COUNT', '5'))
 
 
 
