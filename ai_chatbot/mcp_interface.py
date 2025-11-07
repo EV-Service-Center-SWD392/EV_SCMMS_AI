@@ -562,6 +562,12 @@ class GeminiMCPChatbot:
             
             print(f"🔍 Response candidates: {len(response.candidates)}")
             print(f"🔍 Response finish_reason: {response.candidates[0].finish_reason if response.candidates else 'No candidates'}")
+            print(f"🔍 User message: '{message}'")
+            
+            # Debug: Check if Gemini should have called a function
+            function_keywords = ["lấy danh sách", "tìm phụ tùng", "phụ tùng", "inventory", "tồn kho", "dự báo"]
+            should_call_function = any(keyword in message.lower() for keyword in function_keywords)
+            print(f"🔍 Should call function: {should_call_function}")
             
             # Check for blocked response
             if not response.candidates or response.candidates[0].finish_reason != 1:
@@ -670,12 +676,31 @@ class GeminiMCPChatbot:
                 
                 # Fallback if no response
                 if not ai_response or len(ai_response.strip()) < 5:
+                    # Check if this should have been a function call
+                    function_keywords = ["lấy danh sách", "tìm phụ tùng", "phụ tùng", "inventory", "tồn kho", "dự báo"]
+                    should_call_function = any(keyword in message.lower() for keyword in function_keywords)
+                    
+                    if should_call_function:
+                        print(f"⚠️ Expected function call but none occurred for: {message}")
+                        return {
+                            "success": False,
+                            "error": "Hệ thống không thể xử lý yêu cầu này. Vui lòng thử lại.",
+                            "conversation_id": conversation_id,
+                            "timestamp": datetime.now().isoformat(),
+                            "debug": "Expected function call but Gemini did not trigger it"
+                        }
+                    
                     try:
                         fallback_response = self.fallback_model.generate_content(message)
                         ai_response = fallback_response.text
                     except Exception as fallback_error:
                         print(f"⚠️ Fallback model failed: {fallback_error}")
-                        ai_response = "Xin lỗi, hệ thống đang gặp sự cố. Vui lòng thử lại sau."
+                        return {
+                            "success": False,
+                            "error": "Hệ thống đang gặp sự cố. Vui lòng thử lại sau.",
+                            "conversation_id": conversation_id,
+                            "timestamp": datetime.now().isoformat()
+                        }
             
             # Save to conversation history
             self.conversation_manager.add_message(
