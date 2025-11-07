@@ -206,7 +206,7 @@ class GeminiMCPChatbot:
                     mode=genai.protos.FunctionCallingConfig.Mode.AUTO
                 )
             ),
-            system_instruction="AI trợ lý phụ tùng xe điện EV Service Center. QUAN TRỌNG: Khi người dùng nói 'dự báo' thì LUÔN gọi forecast_demand. Nếu có tên phụ tùng thì truyền part_name, nếu không thì để trống. Không hỏi lại người dùng. Các function khác: phụ tùng→get_spare_parts, tồn kho→get_inventory, lịch sử→get_usage_history.",
+            system_instruction="AI trợ lý phụ tùng xe điện EV Service Center hỗ trợ tiếng Việt. LUÔN ưu tiên nhận diện tiếng Việt trước tiếng Anh. QUAN TRỌNG: 'lấy danh sách phụ tùng'/'danh sách phụ tùng'/'phụ tùng' → get_spare_parts, 'tồn kho'/'inventory' → get_inventory, 'dự báo'/'forecast' → forecast_demand, 'lịch sử' → get_usage_history. Khi người dùng nói tiếng Việt về phụ tùng thì LUÔN gọi function tương ứng.",
             generation_config={
                 "temperature": 0.3,
                 "top_p": 0.8,
@@ -543,6 +543,42 @@ class GeminiMCPChatbot:
         else:
             return "Đã xử lý yêu cầu thành công."
     
+    def detect_manual_function(self, message: str) -> dict:
+        """Manually detect function call when Gemini fails."""
+        message_lower = message.lower()
+        
+        # Detect get_spare_parts
+        if any(keyword in message_lower for keyword in ["lấy danh sách", "danh sách phụ tùng", "phụ tùng"]):
+            # Extract part name if mentioned
+            part_name = None
+            if "tìm" in message_lower:
+                words = message.split()
+                for i, word in enumerate(words):
+                    if "tìm" in word.lower() and i + 1 < len(words):
+                        part_name = " ".join(words[i+1:]).strip()
+                        break
+            
+            return {
+                "name": "get_spare_parts",
+                "args": {"part_name": part_name} if part_name else {}
+            }
+        
+        # Detect get_inventory
+        if any(keyword in message_lower for keyword in ["tồn kho", "inventory", "kho hàng"]):
+            return {
+                "name": "get_inventory",
+                "args": {}
+            }
+        
+        # Detect forecast_demand
+        if any(keyword in message_lower for keyword in ["dự báo", "forecast", "dự đoán"]):
+            return {
+                "name": "forecast_demand",
+                "args": {"months": 6}
+            }
+        
+        return None
+    
     async def process_chat_message(self, message: str, conversation_id: str, user_id: str = "anonymous", context: dict = None) -> dict:
         """Process a chat message with MCP function calling."""
         try:
@@ -595,6 +631,26 @@ class GeminiMCPChatbot:
             
             if response.candidates:
                 print(f"🔍 Content parts: {len(response.candidates[0].content.parts)}")
+                
+                # If no content parts, manually trigger function call
+                if len(response.candidates[0].content.parts) == 0:
+                    print("🔧 No content parts, manually detecting function call")
+                    manual_function = self.detect_manual_function(message)
+                    if manual_function:
+                        print(f"🔧 Manual function: {manual_function['name']}")
+                        # Execute function directly
+                        try:
+                            function_result = await self.call_mcp_function(manual_function['name'], manual_function['args'])
+                            if "error" not in function_result:
+                                function_results.append({
+                                    "function": manual_function['name'],
+                                    "args": manual_function['args'],
+                                    "result": function_result
+                                })
+                                print(f"✅ Manual function executed: {manual_function['name']}")
+                        except Exception as e:
+                            print(f"⚠️ Manual function failed: {e}")
+                
                 for i, part in enumerate(response.candidates[0].content.parts):
                     print(f"🔍 Part {i}: has_function_call={hasattr(part, 'function_call')}")
                     if hasattr(part, 'function_call'):
