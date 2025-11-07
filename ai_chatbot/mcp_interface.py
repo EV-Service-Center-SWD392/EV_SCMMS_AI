@@ -510,6 +510,39 @@ class GeminiMCPChatbot:
         else:
             return {"error": f"Unknown function: {function_name}"}
     
+    def format_function_response(self, function_result: dict) -> str:
+        """Format function result into readable response."""
+        function_name = function_result.get("function", "")
+        result = function_result.get("result", {})
+        
+        if function_name == "get_spare_parts":
+            data = result.get("data", [])
+            if not data:
+                return "Không tìm thấy phụ tùng nào."
+            
+            response = f"Tìm thấy {len(data)} phụ tùng:\n\n"
+            for i, item in enumerate(data[:5], 1):
+                response += f"{i}. {item.get('name', 'N/A')}\n"
+                response += f"   - Giá: {item.get('price', 0):,.0f} VNĐ\n"
+                response += f"   - Hãng: {item.get('manufacture', 'N/A')}\n"
+                response += f"   - Số lượng: {item.get('qty', 0)}\n\n"
+            return response
+            
+        elif function_name == "get_inventory":
+            data = result.get("data", [])
+            if not data:
+                return "Không có dữ liệu tồn kho."
+            
+            response = f"Tình trạng tồn kho ({len(data)} mặt hàng):\n\n"
+            for i, item in enumerate(data[:5], 1):
+                response += f"{i}. {item.get('part_name', 'N/A')}\n"
+                response += f"   - Số lượng: {item.get('quantity', 0)}\n"
+                response += f"   - Mức tối thiểu: {item.get('min_stock', 0)}\n\n"
+            return response
+            
+        else:
+            return "Đã xử lý yêu cầu thành công."
+    
     async def process_chat_message(self, message: str, conversation_id: str, user_id: str = "anonymous", context: dict = None) -> dict:
         """Process a chat message with MCP function calling."""
         try:
@@ -599,17 +632,8 @@ class GeminiMCPChatbot:
                                 "result": function_result
                             })
                             
-                            # Send result back to Gemini
-                            response = chat.send_message(
-                                genai.protos.Content(
-                                    parts=[genai.protos.Part(
-                                        function_response=genai.protos.FunctionResponse(
-                                            name=function_name,
-                                            response={"result": json.dumps(function_result, default=str)}
-                                        )
-                                    )]
-                                )
-                            )
+                            # Don't send back to Gemini, format response directly
+                            print(f"✅ Function executed successfully: {function_name}")
                         except Exception as func_error:
                             print(f"⚠️ Function call failed: {func_error}")
                             return {
@@ -637,18 +661,17 @@ class GeminiMCPChatbot:
                             if hasattr(part, 'text') and part.text:
                                 ai_response += part.text
                 
-                # If still no response, use fallback model
-                if not ai_response or len(ai_response.strip()) < 5:
+                # If function was called, format response from function result
+                if function_results and (not ai_response or len(ai_response.strip()) < 5):
+                    ai_response = self.format_function_response(function_results[0])
+                elif not ai_response or len(ai_response.strip()) < 5:
                     print("⚠️ No valid AI response, using fallback model")
                     try:
                         fallback_response = self.fallback_model.generate_content(message)
                         ai_response = fallback_response.text
                     except Exception as fallback_error:
                         print(f"⚠️ Fallback model also failed: {fallback_error}")
-                        if function_results:
-                            ai_response = "Đã xử lý yêu cầu thành công."
-                        else:
-                            ai_response = "Xin lỗi, hệ thống đang gặp sự cố. Vui lòng thử lại sau."
+                        ai_response = "Xin lỗi, hệ thống đang gặp sự cố. Vui lòng thử lại sau."
                     
             except Exception as e:
                 print(f"⚠️ Error getting response text: {e}")
