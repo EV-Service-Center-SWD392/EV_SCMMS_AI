@@ -528,6 +528,32 @@ class GeminiMCPChatbot:
             response = chat.send_message(contextualized_message)
             
             print(f"🔍 Response candidates: {len(response.candidates)}")
+            print(f"🔍 Response finish_reason: {response.candidates[0].finish_reason if response.candidates else 'No candidates'}")
+            
+            # Check for blocked response
+            if not response.candidates or response.candidates[0].finish_reason != 1:
+                print(f"⚠️ Response blocked or invalid. Finish reason: {response.candidates[0].finish_reason if response.candidates else 'None'}")
+                # Use fallback model immediately
+                try:
+                    fallback_response = self.fallback_model.generate_content(message)
+                    return {
+                        "success": True,
+                        "response": fallback_response.text,
+                        "mode": "fallback_due_to_blocked_response",
+                        "conversation_id": conversation_id,
+                        "timestamp": datetime.now().isoformat(),
+                        "function_calls": [],
+                        "function_results": [],
+                        "function_call_count": 0
+                    }
+                except Exception as fallback_error:
+                    return {
+                        "success": False,
+                        "error": f"Response blocked và fallback failed: {str(fallback_error)}",
+                        "conversation_id": conversation_id,
+                        "timestamp": datetime.now().isoformat()
+                    }
+            
             if response.candidates:
                 print(f"🔍 Content parts: {len(response.candidates[0].content.parts)}")
                 for i, part in enumerate(response.candidates[0].content.parts):
@@ -611,13 +637,18 @@ class GeminiMCPChatbot:
                             if hasattr(part, 'text') and part.text:
                                 ai_response += part.text
                 
-                # If still no response, use default or fallback
-                if not ai_response or len(ai_response.strip()) < 10:
-                    if function_results:
-                        ai_response = "Đã xử lý yêu cầu thành công."
-                    else:
+                # If still no response, use fallback model
+                if not ai_response or len(ai_response.strip()) < 5:
+                    print("⚠️ No valid AI response, using fallback model")
+                    try:
                         fallback_response = self.fallback_model.generate_content(message)
                         ai_response = fallback_response.text
+                    except Exception as fallback_error:
+                        print(f"⚠️ Fallback model also failed: {fallback_error}")
+                        if function_results:
+                            ai_response = "Đã xử lý yêu cầu thành công."
+                        else:
+                            ai_response = "Xin lỗi, hệ thống đang gặp sự cố. Vui lòng thử lại sau."
                     
             except Exception as e:
                 print(f"⚠️ Error getting response text: {e}")
