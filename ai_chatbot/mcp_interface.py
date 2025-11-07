@@ -560,12 +560,9 @@ class GeminiMCPChatbot:
                             # Check if function returned error
                             if "error" in function_result:
                                 print(f"⚠️ Function error: {function_result['error']}")
-                                # Fallback to generative chat
-                                fallback_response = self.fallback_model.generate_content(message)
                                 return {
-                                    "success": True,
-                                    "response": fallback_response.text,
-                                    "mode": "generative_fallback",
+                                    "success": False,
+                                    "error": f"Lỗi function {function_name}: {function_result['error']}",
                                     "conversation_id": conversation_id,
                                     "timestamp": datetime.now().isoformat()
                                 }
@@ -589,12 +586,9 @@ class GeminiMCPChatbot:
                             )
                         except Exception as func_error:
                             print(f"⚠️ Function call failed: {func_error}")
-                            # Fallback to generative chat
-                            fallback_response = self.fallback_model.generate_content(message)
                             return {
-                                "success": True,
-                                "response": fallback_response.text,
-                                "mode": "generative_fallback",
+                                "success": False,
+                                "error": f"Lỗi gọi function {function_name}: {str(func_error)}",
                                 "conversation_id": conversation_id,
                                 "timestamp": datetime.now().isoformat()
                             }
@@ -627,12 +621,13 @@ class GeminiMCPChatbot:
                     
             except Exception as e:
                 print(f"⚠️ Error getting response text: {e}")
-                # Fallback to generative chat on error
-                try:
-                    fallback_response = self.fallback_model.generate_content(message)
-                    ai_response = fallback_response.text
-                except:
-                    ai_response = "Đã xử lý yêu cầu thành công."
+                # Return error response instead of fallback
+                return {
+                    "success": False,
+                    "error": f"Lỗi AI response: {str(e)}",
+                    "conversation_id": conversation_id,
+                    "timestamp": datetime.now().isoformat()
+                }
             
             # Save to conversation history
             self.conversation_manager.add_message(
