@@ -647,41 +647,35 @@ class GeminiMCPChatbot:
                 if not has_function_call:
                     break
             
-            # Get final response or fallback to generative chat
-            try:
-                # Check if response has valid text
-                ai_response = ""
-                if hasattr(response, 'text') and response.text:
-                    ai_response = response.text
-                elif response.candidates and len(response.candidates) > 0:
-                    # Try to get text from candidates
-                    candidate = response.candidates[0]
-                    if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
-                        for part in candidate.content.parts:
-                            if hasattr(part, 'text') and part.text:
-                                ai_response += part.text
+            # Get final response - prioritize function results
+            ai_response = ""
+            
+            # If function was called, use function result directly
+            if function_results:
+                ai_response = self.format_function_response(function_results[0])
+            else:
+                # Only try to get Gemini text if no function was called
+                try:
+                    if hasattr(response, 'text') and response.text:
+                        ai_response = response.text
+                    elif response.candidates and len(response.candidates) > 0:
+                        candidate = response.candidates[0]
+                        if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
+                            for part in candidate.content.parts:
+                                if hasattr(part, 'text') and part.text:
+                                    ai_response += part.text
+                except Exception as e:
+                    print(f"⚠️ Error getting Gemini text: {e}")
+                    ai_response = ""
                 
-                # If function was called, format response from function result
-                if function_results and (not ai_response or len(ai_response.strip()) < 5):
-                    ai_response = self.format_function_response(function_results[0])
-                elif not ai_response or len(ai_response.strip()) < 5:
-                    print("⚠️ No valid AI response, using fallback model")
+                # Fallback if no response
+                if not ai_response or len(ai_response.strip()) < 5:
                     try:
                         fallback_response = self.fallback_model.generate_content(message)
                         ai_response = fallback_response.text
                     except Exception as fallback_error:
-                        print(f"⚠️ Fallback model also failed: {fallback_error}")
+                        print(f"⚠️ Fallback model failed: {fallback_error}")
                         ai_response = "Xin lỗi, hệ thống đang gặp sự cố. Vui lòng thử lại sau."
-                    
-            except Exception as e:
-                print(f"⚠️ Error getting response text: {e}")
-                # Return error response instead of fallback
-                return {
-                    "success": False,
-                    "error": f"Lỗi AI response: {str(e)}",
-                    "conversation_id": conversation_id,
-                    "timestamp": datetime.now().isoformat()
-                }
             
             # Save to conversation history
             self.conversation_manager.add_message(
