@@ -194,6 +194,35 @@ class GeminiMCPChatbot:
                         )
                     }
                 )
+            ),
+            genai.protos.FunctionDeclaration(
+                name="auto_assign_technician",
+                description=(
+                    "Tự động phân công kỹ thuật viên vào lịch làm việc. "
+                    "Sử dụng khi người dùng yêu cầu 'tự động tạo lịch technician', 'đặt lịch làm việc', 'auto assign'. "
+                    "Hệ thống sẽ tự động tìm kỹ thuật viên khả dụng và phân công vào ca làm việc."
+                ),
+                parameters=genai.protos.Schema(
+                    type=genai.protos.Type.OBJECT,
+                    properties={
+                        "center_name": genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            description="Tên trung tâm dịch vụ (tùy chọn)"
+                        ),
+                        "shift": genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            description="Ca làm việc: Morning (sáng), Evening (chiều), Night (tối) hoặc All (để tạo cả 3 ca)"
+                        ),
+                        "date_range": genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            description="Khoảng thời gian: 'today', 'tomorrow', 'this_week', 'next_week' hoặc ngày cụ thể"
+                        ),
+                        "technician_count": genai.protos.Schema(
+                            type=genai.protos.Type.INTEGER,
+                            description="Số lượng kỹ thuật viên cần phân công (tùy chọn, mặc định là 5)"
+                        )
+                    }
+                )
             )
         ]
         
@@ -206,7 +235,7 @@ class GeminiMCPChatbot:
                     mode=genai.protos.FunctionCallingConfig.Mode.AUTO
                 )
             ),
-            system_instruction="AI trợ lý phụ tùng xe điện EV Service Center hỗ trợ tiếng Việt. LUÔN ưu tiên nhận diện tiếng Việt trước tiếng Anh. QUAN TRỌNG: 'lấy danh sách phụ tùng'/'danh sách phụ tùng'/'phụ tùng' → get_spare_parts, 'tồn kho'/'inventory' → get_inventory, 'dự báo'/'forecast' → forecast_demand, 'lịch sử' → get_usage_history. Khi người dùng nói tiếng Việt về phụ tùng thì LUÔN gọi function tương ứng.",
+            system_instruction="AI trợ lý phụ tùng xe điện EV Service Center hỗ trợ tiếng Việt. LUÔN ưu tiên nhận diện tiếng Việt trước tiếng Anh. QUAN TRỌNG: 'lấy danh sách phụ tùng'/'phụ tùng' → get_spare_parts, 'tồn kho' → get_inventory, 'dự báo' → forecast_demand, 'lịch sử' → get_usage_history, 'tự động tạo lịch technician'/'đặt lịch làm việc' → auto_assign_technician. Khi người dùng nói tiếng Việt về phụ tùng hoặc lịch làm việc thì LUÔN gọi function tương ứng.",
             generation_config={
                 "temperature": 0.3,
                 "top_p": 0.8,
@@ -507,6 +536,92 @@ class GeminiMCPChatbot:
                 "note": "AI sẽ không tự động tạo vào database. Frontend cần hiển thị form để người dùng nhập đầy đủ thông tin."
             }
         
+        elif function_name == "auto_assign_technician":
+            center_name = arguments.get("center_name", "EV Service - Thủ Đức")
+            shift = arguments.get("shift", "All")
+            date_range = arguments.get("date_range", "today")
+            technician_count = arguments.get("technician_count", 5)
+            
+            # Import các hàm từ chatbot_api.py
+            import sys
+            sys.path.append(os.path.join(os.path.dirname(__file__)))
+            
+            try:
+                # Import dynamic
+                import importlib.util
+                spec = importlib.util.spec_from_file_location("chatbot_api", 
+                    os.path.join(os.path.dirname(__file__), "chatbot_api.py"))
+                chatbot_api = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(chatbot_api)
+                
+                # Tìm center ID
+                center_id = chatbot_api.find_center_by_name(center_name)
+                if not center_id:
+                    return {
+                        "success": False,
+                        "message": f"Không tìm thấy trung tâm '{center_name}'",
+                        "error": "center_not_found"
+                    }
+                
+                # Xử lý date range
+                from datetime import datetime, timedelta
+                today = datetime.now().date()
+                
+                if date_range == "today":
+                    start_date = end_date = today
+                elif date_range == "tomorrow":
+                    start_date = end_date = today + timedelta(days=1)
+                elif date_range == "this_week":
+                    start_date = today
+                    end_date = today + timedelta(days=6)
+                elif date_range == "next_week":
+                    start_date = today + timedelta(days=7)
+                    end_date = start_date + timedelta(days=6)
+                else:
+                    start_date = end_date = today
+                
+                # Xử lý shifts
+                if shift == "All":
+                    shifts = ["Morning", "Evening"]
+                else:
+                    shifts = [shift]
+                
+                # Gọi API cho từng ngày và ca
+                results = []
+                current_date = datetime.combine(start_date, datetime.min.time())
+                end_datetime = datetime.combine(end_date, datetime.min.time())
+                
+                while current_date <= end_datetime:
+                    for s in shifts:
+                        result = chatbot_api.call_auto_assign_api(center_id, s, current_date, technician_count)
+                        results.append({
+                            "date": current_date.strftime("%Y-%m-%d"),
+                            "shift": s,
+                            "result": result
+                        })
+                    current_date += timedelta(days=1)
+                
+                # Tổng hợp kết quả
+                successful = [r for r in results if r["result"]["success"]]
+                failed = [r for r in results if not r["result"]["success"]]
+                
+                return {
+                    "success": len(successful) > 0,
+                    "message": f"Đã tạo lịch thành công cho {len(successful)} ca, thất bại {len(failed)} ca",
+                    "successful_assignments": len(successful),
+                    "failed_assignments": len(failed),
+                    "details": results,
+                    "center_name": center_name,
+                    "center_id": center_id
+                }
+                
+            except Exception as e:
+                return {
+                    "success": False,
+                    "message": f"Lỗi khi tạo lịch: {str(e)}",
+                    "error": "execution_error"
+                }
+        
         else:
             return {"error": f"Unknown function: {function_name}"}
     
@@ -575,6 +690,18 @@ class GeminiMCPChatbot:
             return {
                 "name": "forecast_demand",
                 "args": {"months": 6}
+            }
+        
+        # Detect auto_assign_technician
+        if any(keyword in message_lower for keyword in ["tự động tạo lịch", "tự động đặt lịch", "auto assign", "phân công kỹ thuật viên"]):
+            return {
+                "name": "auto_assign_technician",
+                "args": {
+                    "center_name": "EV Service - Thủ Đức",
+                    "shift": "All",
+                    "date_range": "today",
+                    "technician_count": 5
+                }
             }
         
         return None
